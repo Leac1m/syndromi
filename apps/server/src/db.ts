@@ -14,6 +14,13 @@ export type AgentRecord = {
   allowanceMint: Address;
   rules: { maxTxUsd: number; approveAboveUsd: number; destinations: string[]; programs: string[] };
   registeredAt: string;
+  runtime?: "local" | "hosted";
+  /** As in the manifest: token symbol (or mint), amount per period, period. */
+  allowance?: { mint: string; amount: number; period: "daily" | "weekly" | "monthly" };
+  feeBudgetSol?: number;
+  /** Hosted agents: the full manifest and prompt the server runs (Day 6). */
+  manifest?: Record<string, unknown>;
+  prompt?: string;
 };
 
 export type DraftStatus =
@@ -75,9 +82,14 @@ export type TopUpRecord = {
 };
 
 const SCHEMA = `
-create table if not exists agents (
-  name text primary key, address text not null, owner text not null, cluster text not null,
-  allowance_mint text not null, rules text not null, registered_at text not null);
+create table if not exists agent_records (
+  name text primary key, owner text not null, data text not null);
+create table if not exists hosted_keys (name text primary key, data text not null);
+create table if not exists sessions (
+  token text primary key, owner text not null, expires_at text not null);
+create table if not exists login_nonces (
+  nonce text primary key, owner text not null, text text not null, created_at text not null,
+  used integer not null default 0);
 create table if not exists drafts (
   id text primary key, agent_name text not null, status text not null, created_at text not null,
   expires_at text not null, data text not null);
@@ -108,45 +120,80 @@ export class Store {
 
   // ------------------------------------------------------------------ agents
   upsertAgent(agent: AgentRecord) {
+    const previous = this.agent(agent.name);
+    // Registration from a runtime must not erase what the server already knows (e.g. a hosted
+    // agent's manifest), and never moves an agent to a different owner.
+    if (previous && previous.owner !== agent.owner) {
+      throw new Error(`agent ${agent.name} belongs to a different owner`);
+    }
+    const merged = {
+      ...previous,
+      ...agent,
+      registeredAt: previous?.registeredAt ?? agent.registeredAt,
+    };
     this.db
       .prepare(
-        `insert into agents values (?, ?, ?, ?, ?, ?, ?)
-         on conflict(name) do update set address = excluded.address, owner = excluded.owner,
-           cluster = excluded.cluster, allowance_mint = excluded.allowance_mint,
-           rules = excluded.rules`,
+        `insert into agent_records values (?, ?, ?)
+         on conflict(name) do update set owner = excluded.owner, data = excluded.data`,
       )
-      .run(
-        agent.name,
-        agent.address,
-        agent.owner,
-        agent.cluster,
-        agent.allowanceMint,
-        json(agent.rules),
-        agent.registeredAt,
-      );
+      .run(agent.name, agent.owner, json(merged));
   }
 
   agent(name: string): AgentRecord | undefined {
-    const row = this.db.prepare("select * from agents where name = ?").get(name) as
-      | Record<string, string>
+    const row = this.db.prepare("select data from agent_records where name = ?").get(name) as
+      | { data: string }
       | undefined;
-    if (!row) return undefined;
-    return {
-      name: row.name as string,
-      address: row.address as Address,
-      owner: row.owner as Address,
-      cluster: row.cluster as Cluster,
-      allowanceMint: row.allowance_mint as Address,
-      rules: JSON.parse(row.rules as string),
-      registeredAt: row.registered_at as string,
-    };
+    return row ? (JSON.parse(row.data) as AgentRecord) : undefined;
   }
 
-  agents(): AgentRecord[] {
-    const rows = this.db.prepare("select name from agents order by name").all() as {
-      name: string;
-    }[];
-    return rows.map((r) => this.agent(r.name)).filter((a): a is AgentRecord => Boolean(a));
+  agents(owner?: string): AgentRecord[] {
+    const rows = this.db
+      .prepare("select data from agent_records where (?1 is null or owner = ?1) order by name")
+      .all(owner ?? null) as { data: string }[];
+    return rows.map((r) => JSON.parse(r.data) as AgentRecord);
+  }
+
+  saveHostedKey(name: string, encrypted: unknown) {
+    this.db
+      .prepare(
+        "insert into hosted_keys values (?, ?) on conflict(name) do update set data = excluded.data",
+      )
+      .run(name, JSON.stringify(encrypted));
+  }
+
+  hostedKey(name: string): unknown {
+    const row = this.db.prepare("select data from hosted_keys where name = ?").get(name) as
+      | { data: string }
+      | undefined;
+    return row ? JSON.parse(row.data) : undefined;
+  }
+
+  // ------------------------------------------------------------------ owner sessions
+  issueLoginNonce(nonce: string, owner: string, text: string) {
+    this.db
+      .prepare("insert into login_nonces (nonce, owner, text, created_at) values (?, ?, ?, ?)")
+      .run(nonce, owner, text, new Date().toISOString());
+  }
+
+  consumeLoginNonce(nonce: string, owner: string): string | undefined {
+    const row = this.db
+      .prepare("select text, owner, used from login_nonces where nonce = ?")
+      .get(nonce) as { text: string; owner: string; used: number } | undefined;
+    if (!row || row.used || row.owner !== owner) return undefined;
+    this.db.prepare("update login_nonces set used = 1 where nonce = ?").run(nonce);
+    return row.text;
+  }
+
+  createSession(token: string, owner: string, expiresAt: string) {
+    this.db.prepare("insert into sessions values (?, ?, ?)").run(token, owner, expiresAt);
+  }
+
+  sessionOwner(token: string, now = new Date()): string | undefined {
+    const row = this.db
+      .prepare("select owner, expires_at from sessions where token = ?")
+      .get(token) as { owner: string; expires_at: string } | undefined;
+    if (!row || Date.parse(row.expires_at) < now.getTime()) return undefined;
+    return row.owner;
   }
 
   // ------------------------------------------------------------------ drafts
@@ -226,14 +273,31 @@ export class Store {
       .run(agentName, event.type, event.at, json(event));
   }
 
-  activity(opts: { agentName?: string; limit?: number } = {}) {
+  /** Newest first, or (with `after`) everything newer than a sequence number, oldest first. */
+  activity(opts: { agentNames?: string[]; after?: number; limit?: number } = {}) {
+    const names = opts.agentNames;
+    if (names && names.length === 0) return [];
+    const placeholders = names ? names.map(() => "?").join(", ") : "";
+    const where = [
+      names ? `agent_name in (${placeholders})` : "1 = 1",
+      opts.after !== undefined ? "seq > ?" : "1 = 1",
+    ].join(" and ");
+    const order = opts.after !== undefined ? "asc" : "desc";
+    const params = [
+      ...(names ?? []),
+      ...(opts.after !== undefined ? [opts.after] : []),
+      opts.limit ?? 100,
+    ];
     const rows = this.db
       .prepare(
-        `select data from activity where (?1 is null or agent_name = ?1)
-         order by seq desc limit ?2`,
+        `select seq, agent_name, data from activity where ${where} order by seq ${order} limit ?`,
       )
-      .all(opts.agentName ?? null, opts.limit ?? 100) as { data: string }[];
-    return rows.map((r) => JSON.parse(r.data) as Record<string, unknown>);
+      .all(...params) as { seq: number; agent_name: string; data: string }[];
+    return rows.map((r) => ({
+      seq: r.seq,
+      agentName: r.agent_name,
+      ...(JSON.parse(r.data) as Record<string, unknown>),
+    }));
   }
 
   // ------------------------------------------------------------------ signing nonces

@@ -77,6 +77,7 @@ beforeEach(async () => {
     env: {},
     draftTtlMs: 30 * 60 * 1000,
     topUpTtlMs: 24 * 60 * 60 * 1000,
+    dashboardOrigins: ["http://localhost:3000"],
   });
   app = createApp(ctx);
   await api("/api/agents", {

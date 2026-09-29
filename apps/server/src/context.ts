@@ -22,6 +22,8 @@ export type ServerConfig = {
   env: Record<string, string | undefined>;
   draftTtlMs: number;
   topUpTtlMs: number;
+  /** Origins allowed to call /owner (the dashboard). */
+  dashboardOrigins: string[];
 };
 
 export type ServerContext = {

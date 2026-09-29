@@ -29,7 +29,11 @@ export function mountApi(app: Hono, ctx: ServerContext) {
 
   app.post("/api/agents", async (c) => {
     const body = (await c.req.json()) as Omit<AgentRecord, "registeredAt">;
-    store.upsertAgent({ ...body, registeredAt: new Date().toISOString() });
+    try {
+      store.upsertAgent({ ...body, registeredAt: new Date().toISOString() });
+    } catch (e) {
+      return c.json({ error: (e as Error).message }, 409);
+    }
     return c.json({ ok: true });
   });
 

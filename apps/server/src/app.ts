@@ -6,6 +6,7 @@ import { mountSpec } from "./actions/spec.js";
 import { mountApi } from "./api.js";
 import { mountApprovePage } from "./approve-page.js";
 import type { ServerContext } from "./context.js";
+import { mountOwner } from "./owner.js";
 
 export function createApp(ctx: ServerContext) {
   const app = new Hono();
@@ -14,6 +15,8 @@ export function createApp(ctx: ServerContext) {
   mountApproveTopUp(app, ctx, icon);
   mountApprovePage(app, ctx);
   mountApi(app, ctx);
+  mountOwner(app, ctx);
+  recordApprovalEvents(ctx);
   app.get("/", (c) => c.text("syndromi server"));
   return app;
 }
@@ -24,5 +27,36 @@ export function listen(ctx: ServerContext, port: number) {
     const server = serve({ fetch: createApp(ctx).fetch, port }, (info) =>
       resolve({ port: info.port, close: () => server.close() }),
     );
+  });
+}
+
+/** Status changes of drafts and top-ups become activity-feed events. */
+function recordApprovalEvents(ctx: ServerContext) {
+  const at = () => new Date().toISOString();
+  ctx.bus.on("draft", (d) => {
+    if (d.status === "pending") return; // the runtime already logged draft_created
+    ctx.store.addActivity(d.agentName, {
+      type: "approval",
+      at: at(),
+      kind: "draft",
+      id: d.id,
+      status: d.status,
+      summary: d.summary,
+      cluster: d.cluster,
+      ...(d.resultSignature ? { signature: d.resultSignature } : {}),
+      ...(d.resultError ? { error: d.resultError } : {}),
+    });
+  });
+  ctx.bus.on("topup", (t) => {
+    ctx.store.addActivity(t.agentName, {
+      type: "approval",
+      at: at(),
+      kind: "topup",
+      id: t.id,
+      status: t.status,
+      summary: `top-up of ${Number(t.amount) / 1e6} USDC: ${t.reason}`,
+      cluster: t.cluster,
+      ...(t.resultSignature ? { signature: t.resultSignature } : {}),
+    });
   });
 }

@@ -65,6 +65,7 @@ describe.skipIf(!surfpoolUp)("approvals end to end on the fork", () => {
       env: {},
       draftTtlMs: 30 * 60 * 1000,
       topUpTtlMs: 60 * 60 * 1000,
+      dashboardOrigins: [],
     });
     server = await listen(ctx, 0);
     const url = `http://127.0.0.1:${server.port}`;

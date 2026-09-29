@@ -121,12 +121,33 @@ _Deferred: Google/Apple embedded wallets (need a Phantom Portal App ID); running
 
 **Goal:** the same agent runs hosted, and the injection attack visibly fails.
 
-- [ ] `syndromi deploy <dir>`: uploads a manifest to the server, which runs it with the same runtime.
-- [ ] Deploy the server (a small VPS, Fly, or Railway). Hosted yield-scout runs on schedule.
-- [ ] `fixtures/injection`: a tool response (e.g. a fake pool description) containing an instruction to transfer funds to an unknown address. Show: the model attempts it, the policy returns `block`, Telegram alert, BLOCKED in the feed.
-- [ ] Full demo rehearsal on devnet/fork; list every rough edge.
+- [x] `syndromi deploy <dir>`: uploads a manifest to the server, which runs it with the same runtime. _(The hosted runtime runs inside the server: keys encrypted with `SYNDROMI_HOSTED_SECRET`, cron or **Run now**, and an approval watcher.)_
+- [x] Deploy the server (a small VPS, Fly, or Railway). Hosted yield-scout runs on schedule. _(Cut line 1, by choice: the server runs on the owner's machine behind a Cloudflare quick tunnel, `pnpm tunnel`, so phones can approve via Phantom's browse deep link. Deferred: a real cloud deploy with a stable URL.)_
+- [x] `fixtures/injection`: a tool response (e.g. a fake pool description) containing an instruction to transfer funds to an unknown address. Show: the model attempts it, the policy returns `block`, Telegram alert, BLOCKED in the feed. _(`pool-scout` reads the poisoned `yield-data`. The real NVIDIA model fell for it with the prompt guard off (demo-only flag) and was BLOCKED. `demo.script: injection` is the scripted fallback.)_
+- [x] Full demo rehearsal on devnet/fork; list every rough edge. _(Run 1 is complete; see below. Run 2 waits for the NVIDIA model to recover.)_
 
 **Done when:** the six-step demo in `CLAUDE.md` runs start to finish twice in a row.
+
+_Rehearsal run 1 (Sep 29, devnet + fork, Phantom desktop + phone, Telegram):_
+- _Steps 1–2: sign in; `yield-scout` hosted on the fork (funded `Ubi8Gz…`); `dca-agent` local on devnet (`3BeR1U…`)._
+- _Step 3 twice: hosted run → draft → approved → the server swapped (`2BbN7e…`, `fqEXfM…`)._
+- _Step 4: top-up approved and pulled (`4SyexW…`)._
+- _Step 5: the live NVIDIA model timed out repeatedly (provider outage), so the scripted `pool-scout` stood in: BLOCKED, with a Telegram alert and nothing sent. The real model had fallen for the injection earlier the same day on the fork._
+- _Step 6: kill switch on devnet (`58vThr…`), leaving 0 delegations._
+
+_**Not yet met:** two consecutive full runs with the live model. Run 2 is pending the NVIDIA recovery._
+
+**Rough edges for Day 7** (from the rehearsal):
+1. The feed shows nothing while an agent thinks; show progress lines (tool calls, "asking the model…").
+2. LLM timeouts aren't retried, and the message is cryptic ("The operation was aborted due to timeout"). Retry once, then say the provider didn't respond.
+3. **Run now** stays at "Run started ✓" and never shows when the run finished or failed.
+4. **A backup model:** the NVIDIA key reaches only one chat model, and it went down. Configure a second provider (paid Gemini or Anthropic) with automatic failover on timeouts.
+5. For the recording, keep the scripted `pool-scout` ready as a clearly labelled fallback.
+6. Step 4 used `syndromi request-topup`. For the video, have the agent request a top-up itself when its allowance is used up.
+7. Agents from failed attempts clutter the list; add a "remove agent" action (and only list registered agents that are unfunded when asked).
+8. The tunnel URL changes on every restart, so `PUBLIC_URL` is set by hand; script the tunnel-then-server start.
+9. Confirm the **Open in Phantom (phone)** path on the phone for both message and transaction approvals.
+10. A mainnet rehearsal needs a fresh owner wallet (about $30 USDC + 0.05 SOL).
 
 > **Kickoff prompt:** Day 6. Implement `syndromi deploy` and hosted execution in apps/server using the same runtime package. Then build the injection fixture and verify the policy blocks it. Finally, script a full demo run and report every failure.
 

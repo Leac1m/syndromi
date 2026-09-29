@@ -31,7 +31,9 @@ The Foundation gave Solana allowances. syndromí turns them into safe, governabl
   - Revoking delegations → kill switch.
   - Rejects mints with certain Token-2022 extensions (ConfidentialTransfer, NonTransferable, PermanentDelegate, TransferFee, MintCloseAuthority, Pausable). The docs now say TransferHook is supported, but SDK 0.5.0 still defines `MINT_HAS_TRANSFER_HOOK`. Use plain USDC / SPL test mints.
 - **Bag** = the owner's USDC token account (recommend a dedicated Phantom account). The program's per-(user, mint) Subscription Authority PDA gates every pull.
-- **Agent wallet** = a keypair per agent. Local: encrypted keypair file under `~/.syndromi/`. Hosted: server-held keypair from env/secret store for the hackathon (managed MPC/TEE custody is roadmap).
+- **Agent wallet** = a keypair per agent. Local: encrypted keypair file under `~/.syndromi/`. Hosted: the server generates the key and stores it encrypted with `SYNDROMI_HOSTED_SECRET` (managed MPC/TEE custody is roadmap).
+- **Hosting** (Day 6): the server runs hosted agents in-process (`apps/server/src/hosted.ts`) on the owner's machine, reached through a Cloudflare quick tunnel (`pnpm tunnel`) for phone approvals. A real cloud deploy is deferred.
+- **Demo-only switches**: manifest `demo: { injection, unguarded, script }` exists only for the prompt-injection demo (`fixtures/injection/pool-scout`). Never set them on real agents; the prompt guard is on by default and tested.
 - **Fee budget** = small SOL transfer from owner to agent wallet at creation (covers tx fees and token-account rent).
 - **Policy layer** = a signer wrapper in `packages/core`. Nothing signs without passing it. Swig smart-wallet permissions passed the Day-1 spike (see `docs/architecture.md`). They are a first stretch item layered on top of the offchain signer, never a replacement for it.
 - **Network**: devnet by default. Jupiter is mainnet-only, so swaps are tested against a Surfpool mainnet fork. **The recorded demo runs on mainnet with a few dollars** (decided Day 5: Phantom cannot reach the fork). Build and rehearse on devnet and the fork first; use a fresh owner wallet with about $30 USDC + 0.05 SOL.

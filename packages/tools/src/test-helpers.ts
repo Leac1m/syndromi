@@ -46,7 +46,7 @@ export const policy: Policy = {
 };
 
 export async function fakeContext(overrides: Partial<ToolContext> = {}): Promise<ToolContext> {
-  const agent = (await generateKeyPairSigner()).address;
+  const agent = overrides.agent ?? (await generateKeyPairSigner()).address;
   const owner = (await generateKeyPairSigner()).address;
   const rpc = fakeRpc();
   return {

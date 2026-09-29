@@ -95,8 +95,10 @@ export function syndromiHome(root?: string): string {
   return root ?? process.env.SYNDROMI_HOME ?? join(homedir(), ".syndromi");
 }
 
-const keypairPath = (name: string, root?: string) =>
-  join(syndromiHome(root), "agents", name, "keypair.enc.json");
+/** Per-agent state: keypair.enc.json, agent.json, activity.jsonl, drafts/, topups/. */
+export const agentDir = (name: string, root?: string) => join(syndromiHome(root), "agents", name);
+
+const keypairPath = (name: string, root?: string) => join(agentDir(name, root), "keypair.enc.json");
 
 /** Writes the encrypted keypair with owner-only permissions (dir 0700, file 0600). */
 export async function saveLocalKeypair(
@@ -106,7 +108,7 @@ export async function saveLocalKeypair(
   opts: { root?: string } = {},
 ): Promise<string> {
   const path = keypairPath(name, opts.root);
-  await mkdir(join(syndromiHome(opts.root), "agents", name), { recursive: true, mode: 0o700 });
+  await mkdir(agentDir(name, opts.root), { recursive: true, mode: 0o700 });
   const file = await encryptKeypair(keypair, passphrase);
   await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600, flag: "wx" });
   return path;

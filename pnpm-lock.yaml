@@ -235,6 +235,19 @@ importers:
       '@syndromi/tools':
         specifier: workspace:*
         version: link:../tools
+      croner:
+        specifier: ^10.0.1
+        version: 10.0.1
+    devDependencies:
+      '@solana-program/compute-budget':
+        specifier: ^0.17.0
+        version: 0.17.0(@solana/kit@7.1.1(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2))
+      '@solana-program/token':
+        specifier: ^0.15.0
+        version: 0.15.0(@solana/kit@7.1.1(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2))
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
 
   packages/tools:
     dependencies:
@@ -1486,6 +1499,10 @@ packages:
   commander@15.0.0:
     resolution: {integrity: sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg==}
     engines: {node: '>=22.12.0'}
+
+  croner@10.0.1:
+    resolution: {integrity: sha512-ixNtAJndqh173VQ4KodSdJEI6nuioBWI0V1ITNKhZZsO0pEMoDxz539T4FTTbSZ/xIOSuDnzxLVRqBVSvPNE2g==}
+    engines: {node: '>=18.0'}
 
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
@@ -2982,6 +2999,8 @@ snapshots:
   commander@14.0.3: {}
 
   commander@15.0.0: {}
+
+  croner@10.0.1: {}
 
   detect-libc@2.1.2: {}
 

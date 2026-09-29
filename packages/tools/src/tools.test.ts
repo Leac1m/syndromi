@@ -7,14 +7,14 @@ import { createToolset } from "./registry.js";
 import { fakeContext, fakeRpc, policy, SOL_MINT, USDC_MAINNET } from "./test-helpers.js";
 import { defineTool } from "./tool.js";
 
-const ix = (programId: string) => ({ programId, accounts: [], data: "" });
+const ix = (programId: string, data = "") => ({ programId, accounts: [], data });
 const buildResponse = {
   inAmount: "2990000", // Jupiter's number, deliberately not the 3 the model asked for
   outAmount: "25000000",
   otherAmountThreshold: "24750000",
   priceImpactPct: "0.0001",
   routePlan: [{ swapInfo: { label: "Raydium CLMM" } }],
-  computeBudgetInstructions: [ix(COMPUTE_BUDGET_PROGRAM_ADDRESS)],
+  computeBudgetInstructions: [ix(COMPUTE_BUDGET_PROGRAM_ADDRESS, "AxAnAAAAAAAA")], // SetComputeUnitPrice
   setupInstructions: [],
   swapInstruction: ix(JUPITER_PROGRAM_ADDRESS),
   cleanupInstruction: null,
@@ -94,6 +94,7 @@ suite("jupiter-swap", () => {
     expect(out.proposal.message.feePayer.address).toBe(ctx.agent);
     expect(String(fetch.mock.calls[0]?.[0])).toMatch(/amount=3000000.*dexes=Whirlpool/);
     expect(out.summary).toMatch(/swap 2\.99 USDC → ~0\.025 SOL/);
+    expect(out.simulationError).toBeUndefined();
     expect((await evaluate(out.proposal, policy, ctx.prices)).verdict).toBe("allow");
   });
 

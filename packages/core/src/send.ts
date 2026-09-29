@@ -1,7 +1,8 @@
 // One way to send, on every cluster: simulate (to surface program logs), send with
-// skipPreflight, then poll signature status over HTTP. kit's plugin sendTransaction estimates
-// resource limits with its own simulation first, which on Surfpool 1.6 intermittently stalls on
-// a remote account fetch and surfaces as "Cannot destructure property 'err' of 'data'".
+// skipPreflight, then poll signature status over HTTP. Surfpool 1.6 intermittently stalls ~30s
+// on a remote account fetch while processing a transaction and answers with a JSON-RPC error
+// kit cannot parse ("Cannot destructure property 'err' of 'data'"). Re-sending the same signed
+// transaction is safe (same signature; it lands at most once), so the send is retried.
 import {
   appendTransactionMessageInstructions,
   createTransactionMessage,
@@ -26,6 +27,8 @@ export type SendRpc = Rpc<
   SimulateTransactionApi & SendTransactionApi & GetSignatureStatusesApi & GetLatestBlockhashApi
 >;
 
+const SEND_ATTEMPTS = 3;
+
 export class SendError extends Error {
   constructor(
     message: string,
@@ -48,7 +51,18 @@ export async function sendAndConfirm(
     throw new SendError(`simulation failed: ${stringify(sim.value.err)}`, sim.value.logs ?? []);
   }
   const signature = getSignatureFromTransaction(signed);
-  await rpc.sendTransaction(wire, { encoding: "base64", skipPreflight: true }).send();
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await rpc.sendTransaction(wire, { encoding: "base64", skipPreflight: true }).send();
+      break;
+    } catch (error) {
+      const { value } = await rpc.getSignatureStatuses([signature]).send();
+      if (value[0]) break; // it landed despite the error
+      if (attempt >= SEND_ATTEMPTS) {
+        throw new SendError(`send failed: ${(error as Error).message}`, [], signature);
+      }
+    }
+  }
   const deadline = Date.now() + (opts.timeoutMs ?? 60_000);
   while (Date.now() < deadline) {
     const { value } = await rpc.getSignatureStatuses([signature]).send();

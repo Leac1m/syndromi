@@ -78,19 +78,6 @@ export async function runStep(
   throw new Error(`Unsupported action response: ${response.type}`);
 }
 
-/** Wire bytes of whatever a wallet hands back (web3.js objects serialize(); kit ones encode). */
-export function signedBytes(signed: unknown): Uint8Array {
-  if (signed instanceof Uint8Array) return signed;
-  const maybe = signed as { serialize?: () => Uint8Array; messageBytes?: unknown };
-  if (typeof maybe.serialize === "function") return new Uint8Array(maybe.serialize());
-  if (maybe.messageBytes) {
-    return new Uint8Array(
-      getBase64Encoder().encode(getBase64EncodedWireTransaction(signed as Transaction)),
-    );
-  }
-  throw new Error("The wallet returned a transaction in an unknown format.");
-}
-
 async function request<T = Card>(fetchImpl: Fetch, url: string, body?: unknown): Promise<T> {
   const res = await fetchImpl(url, {
     method: body === undefined ? "GET" : "POST",

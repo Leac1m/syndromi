@@ -8,7 +8,12 @@ import {
   usePhantom,
   useSolana,
 } from "@phantom/react-sdk";
-import { getBase58Encoder, type Transaction } from "@solana/kit";
+import {
+  getBase58Encoder,
+  getBase64EncodedWireTransaction,
+  getBase64Encoder,
+  type Transaction,
+} from "@solana/kit";
 import {
   createContext,
   type ReactNode,
@@ -18,9 +23,10 @@ import {
   useMemo,
   useState,
 } from "react";
-import { type Signer, signedBytes } from "@/lib/actions";
+import type { Signer } from "@/lib/actions";
 import { clearSession, currentSession, signIn } from "@/lib/api";
 import type { Network } from "@/lib/config";
+import { signTransactionBytes } from "@/lib/wallet-standard";
 
 type AppState = {
   network: Network;
@@ -119,7 +125,10 @@ function AppProvider({ children }: { children: ReactNode }) {
           signMessage,
           async signTransaction(transaction: Transaction) {
             await solana.switchNetwork(network).catch(() => undefined);
-            return signedBytes(await solana.signTransaction(transaction as never));
+            const wire = new Uint8Array(
+              getBase64Encoder().encode(getBase64EncodedWireTransaction(transaction)),
+            );
+            return signTransactionBytes(session.owner, wire, `solana:${network}`);
           },
         };
       },

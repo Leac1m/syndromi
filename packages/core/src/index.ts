@@ -1,4 +1,5 @@
 export * from "./agent-wallet.js";
+export * from "./approval.js";
 export * from "./bag.js";
 export * from "./cluster.js";
 export * from "./manifest.js";

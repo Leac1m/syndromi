@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPriceSource, JupiterPriceSource, PythPriceSource } from "./prices.js";
+import {
+  createPriceSource,
+  FallbackPriceSource,
+  JupiterPriceSource,
+  PythPriceSource,
+  StaticPriceSource,
+} from "./prices.js";
 import { findToken } from "./tokens.js";
 
 const USDC = findToken("USDC", "mainnet");
@@ -72,9 +78,35 @@ describe("PythPriceSource", () => {
   });
 });
 
+describe("FallbackPriceSource", () => {
+  it("returns the first defined price, in order", async () => {
+    const a = new StaticPriceSource({});
+    const b = new StaticPriceSource({ [usdcMainnet]: 1.01 });
+    const c = new StaticPriceSource({ [usdcMainnet]: 2 });
+    expect(await new FallbackPriceSource([a, b, c]).usdPrice(usdcMainnet)).toBe(1.01);
+    expect(await new FallbackPriceSource([a]).usdPrice(usdcMainnet)).toBeUndefined();
+  });
+
+  it("falls through to Jupiter when the Pyth key is rejected, warning once", async () => {
+    const warn = vi.fn();
+    const pyth = new PythPriceSource({
+      apiKey: "expired",
+      fetch: () => Promise.resolve({ ok: false, status: 401 } as Response),
+      warn,
+    });
+    const jupiter = new JupiterPriceSource({
+      fetch: () => json({ [usdcMainnet]: { usdPrice: 0.9998 } }),
+    });
+    const source = new FallbackPriceSource([pyth, jupiter]);
+    expect(await source.usdPrice(usdcMainnet)).toBe(0.9998);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain("HTTP 401");
+  });
+});
+
 describe("createPriceSource", () => {
-  it("uses Pyth only when PYTH_API_KEY is set", () => {
+  it("puts Pyth in front of Jupiter only when PYTH_API_KEY is set", () => {
     expect(createPriceSource({}).name).toBe("jupiter");
-    expect(createPriceSource({ PYTH_API_KEY: "k" }).name).toBe("pyth");
+    expect(createPriceSource({ PYTH_API_KEY: "k" }).name).toBe("pyth+jupiter");
   });
 });

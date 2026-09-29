@@ -57,8 +57,11 @@ export class PythPriceSource implements PriceSource {
       now?: () => number;
       /** Reject prices older than this many seconds. */
       maxAgeS?: number;
+      /** Called once if Hermes rejects the key (the trial key lapses after 14 days). */
+      warn?: (message: string) => void;
     },
   ) {}
+  private warned = false;
 
   async usdPrice(mint: Address): Promise<number | undefined> {
     const token: TokenInfo | undefined = tokenByMint(mint);
@@ -75,6 +78,12 @@ export class PythPriceSource implements PriceSource {
         `${base}/v2/updates/price/latest?ids[]=0x${feed}&parsed=true`,
         { headers: { Authorization: `Bearer ${this.opts.apiKey}` } },
       );
+      if ((res.status === 401 || res.status === 403) && !this.warned) {
+        this.warned = true;
+        (this.opts.warn ?? console.warn)(
+          `Pyth rejected PYTH_API_KEY (HTTP ${res.status}); the key may have expired. Prices fall back to Jupiter.`,
+        );
+      }
       if (res.ok) {
         const body = (await res.json()) as {
           parsed?: { price: { price: string; expo: number; publish_time: number } }[];
@@ -91,10 +100,31 @@ export class PythPriceSource implements PriceSource {
   }
 }
 
-/** Pyth when PYTH_API_KEY is set, otherwise keyless Jupiter. */
-export function createPriceSource(env: Record<string, string | undefined> = process.env) {
-  if (env.PYTH_API_KEY) return new PythPriceSource({ apiKey: env.PYTH_API_KEY });
-  return new JupiterPriceSource({ apiKey: env.JUPITER_API_KEY });
+/** Asks each source in order and returns the first price found. */
+export class FallbackPriceSource implements PriceSource {
+  readonly name: string;
+  constructor(private readonly sources: readonly PriceSource[]) {
+    this.name = sources.map((s) => s.name).join("+");
+  }
+  async usdPrice(mint: Address) {
+    for (const source of this.sources) {
+      const price = await source.usdPrice(mint);
+      if (price !== undefined) return price;
+    }
+    return undefined;
+  }
+}
+
+/**
+ * Pyth first when PYTH_API_KEY is set, with keyless Jupiter behind it (so an expired or
+ * rate-limited key degrades to Jupiter rather than to "no price"); otherwise Jupiter alone.
+ */
+export function createPriceSource(
+  env: Record<string, string | undefined> = process.env,
+): PriceSource {
+  const jupiter = new JupiterPriceSource({ apiKey: env.JUPITER_API_KEY });
+  if (!env.PYTH_API_KEY) return jupiter;
+  return new FallbackPriceSource([new PythPriceSource({ apiKey: env.PYTH_API_KEY }), jupiter]);
 }
 
 /** Fixed prices, for tests and offline runs. */

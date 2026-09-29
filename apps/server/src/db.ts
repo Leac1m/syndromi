@@ -63,6 +63,8 @@ export type TopUpRecord = {
   expiresAt: string;
   /** The fixed-delegation PDA the owner's approval transaction creates (set when built). */
   delegation?: Address;
+  /** Base64 message bytes of the transaction issued for signing; only this may be submitted. */
+  issuedMessage?: string;
   approvalSignature?: string;
   resultSignature?: string;
   resultError?: string;

@@ -2,9 +2,9 @@
 // through the same Actions endpoints a wallet uses. Needed for fork agents (Phantom cannot
 // reach Surfpool) and for automated end-to-end tests.
 import {
-  createSolanaRpc,
   decompileTransactionMessage,
   getBase58Decoder,
+  getBase64EncodedWireTransaction,
   getBase64Encoder,
   getCompiledTransactionMessageDecoder,
   getTransactionDecoder,
@@ -15,10 +15,7 @@ import {
 import {
   type Cluster,
   COMPUTE_BUDGET_PROGRAM_ADDRESS,
-  explorerTx,
-  rpcUrlFor,
   SUBSCRIPTIONS_PROGRAM_ADDRESS,
-  sendAndConfirm,
 } from "@syndromi/core";
 import { confirmMainnet, type Env, loadOwner } from "../context.js";
 import { CliError, type Io } from "../io.js";
@@ -95,10 +92,11 @@ export async function approve(
   }
   await confirmMainnet(opts.cluster, io, `approve top-up ${id}`);
   const signed = await signTransaction([owner.keyPair], tx);
-  const rpc = createSolanaRpc(rpcUrlFor(opts.cluster, env));
-  const signature = await sendAndConfirm(rpc, signed as Parameters<typeof sendAndConfirm>[1]);
-  io.print(`sent ${explorerTx(signature, opts.cluster)}`);
-  const done = await action(next, { account: owner.address, signature });
+  // Like the approve page: sign here, and let the server send it to the agent's cluster.
+  const done = await action(`${href}/submit`, {
+    account: owner.address,
+    transaction: getBase64EncodedWireTransaction(signed),
+  });
   io.print(`${done.title}: ${done.description}`);
   return done;
 }

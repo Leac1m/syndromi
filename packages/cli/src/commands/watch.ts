@@ -23,6 +23,7 @@ export async function watch(
     fileSink(join(home, "activity.jsonl")),
     httpSink(client, manifest.name),
   ];
+  const attempts = new Map<string, number>();
   const pass = () =>
     executeApprovals({
       client,
@@ -32,6 +33,7 @@ export async function watch(
       ctx: agent.ctx,
       log: new ActivityLog(manifest.name, sinks),
       send: (tx) => sendAndConfirm(agent.rpc, tx),
+      attempts,
     });
   if (opts.once) return pass();
   io.print(`watching approvals for ${manifest.name} every 5 s (Ctrl+C to stop)`);

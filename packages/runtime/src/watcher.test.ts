@@ -10,8 +10,8 @@ import {
 } from "@solana/kit";
 import { COMPUTE_BUDGET_PROGRAM_ADDRESS } from "@solana-program/compute-budget";
 import { approvalMessage, createPolicySigner, JUPITER_PROGRAM_ADDRESS } from "@syndromi/core";
-import { createToolset } from "@syndromi/tools";
-import { fakeContext, SOL_MINT, USDC_MAINNET } from "@syndromi/tools/testing";
+import { createToolset, type ToolContext } from "@syndromi/tools";
+import { fakeContext, fakeRpc, SOL_MINT, USDC_MAINNET } from "@syndromi/tools/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ActivityLog, memorySink } from "./activity.js";
 import type { ApprovedDraft, ServerClient } from "./server-client.js";
@@ -81,11 +81,16 @@ async function approved(signer: KeyPairSigner = owner, overrides: Partial<Approv
   return { ...draft, approvalText: text, approvalSignature: signature, ...overrides };
 }
 
-async function run(drafts: ApprovedDraft[], inAmount?: string) {
+async function run(
+  drafts: ApprovedDraft[],
+  inAmount?: string,
+  extra: { rpc?: ToolContext["rpc"]; attempts?: Map<string, number> } = {},
+) {
   const ctx = await fakeContext({
     agent: agentSigner.address,
     owner: owner.address as Address,
     jupiter: { fetch: jupiter(inAmount) },
+    ...(extra.rpc ? { rpc: extra.rpc } : {}),
   });
   const client = {
     approvals: vi.fn(async () => ({ drafts, topups: [] })),
@@ -102,6 +107,7 @@ async function run(drafts: ApprovedDraft[], inAmount?: string) {
     ctx,
     log: new ActivityLog("yield-scout", [sink]),
     send,
+    ...(extra.attempts ? { attempts: extra.attempts } : {}),
   });
   return { result, client, send, sink };
 }
@@ -145,5 +151,26 @@ describe("executeApprovals", () => {
       expect.stringMatching(/hash mismatch/),
       expect.stringMatching(/different agent/),
     ]);
+  });
+
+  it("retries a failing simulation on later passes before marking the draft failed", async () => {
+    const rpc = fakeRpc({
+      simulateTransaction: () => ({
+        value: {
+          err: { InstructionError: [3, { Custom: 6024 }] },
+          unitsConsumed: 5n,
+          logs: ["too little output"],
+        },
+      }),
+    });
+    const attempts = new Map<string, number>();
+    const draft = await approved();
+    const first = await run([draft], undefined, { rpc, attempts });
+    expect(first.result.failed).toEqual([]);
+    expect(first.client.reportDraft).not.toHaveBeenCalled();
+    await run([draft], undefined, { rpc, attempts });
+    const third = await run([draft], undefined, { rpc, attempts });
+    expect(third.result.failed).toEqual(["d_1234abcd"]);
+    expect(third.send).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,8 @@
 //   GET  /actions/approve-topup/:id          → the card
 //   POST /actions/approve-topup/:id          → {type:"transaction", transaction:<base64, unsigned>}
 //   POST /actions/approve-topup/:id/confirm  → callback after it lands; the sweeper also checks
+//   POST /actions/approve-topup/:id/submit   → our viewer's path: the wallet only signs and the
+//        server sends it to the agent's cluster (wallets send on their own selected network)
 import type {
   ActionGetResponse,
   CompletedAction,
@@ -12,12 +14,15 @@ import {
   appendTransactionMessageInstructions,
   compileTransaction,
   createTransactionMessage,
+  getBase64Decoder,
   getBase64EncodedWireTransaction,
+  getBase64Encoder,
+  getTransactionDecoder,
   pipe,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/kit";
-import { grantTopUp, tokenByMint, toUiAmount } from "@syndromi/core";
+import { grantTopUp, sendAndConfirm, tokenByMint, toUiAmount } from "@syndromi/core";
 import type { Context, Hono } from "hono";
 import type { ServerContext } from "../context.js";
 import { checkTopUp } from "../sweeper.js";
@@ -93,7 +98,10 @@ export function mountApproveTopUp(app: Hono, ctx: ServerContext, icon: string) {
         (m) => appendTransactionMessageInstructions(built.instructions, m),
       ),
     );
-    store.updateTopUp(topup.id, { delegation: built.delegation });
+    store.updateTopUp(topup.id, {
+      delegation: built.delegation,
+      issuedMessage: getBase64Decoder().decode(transaction.messageBytes),
+    });
     const body: TransactionResponse = {
       type: "transaction",
       transaction: getBase64EncodedWireTransaction(transaction),
@@ -101,6 +109,47 @@ export function mountApproveTopUp(app: Hono, ctx: ServerContext, icon: string) {
       links: { next: { type: "post", href: `${path(topup.id)}/confirm` } },
     };
     return actionJson(c, body, topup.cluster);
+  });
+
+  app.post(`${path(":id")}/submit`, async (c) => {
+    const { topup, error } = load(c);
+    if (!topup) return error;
+    if (topup.status !== "pending") return actionError(c, `This request is ${topup.status}.`, 409);
+    const body = (await c.req.json().catch(() => ({}))) as {
+      account?: string;
+      transaction?: string;
+    };
+    if (body.account !== topup.owner || !body.transaction || !topup.issuedMessage) {
+      return actionError(c, "Request the transaction first, signed by the bag owner.", 400);
+    }
+    let signed: ReturnType<ReturnType<typeof getTransactionDecoder>["decode"]>;
+    try {
+      signed = getTransactionDecoder().decode(getBase64Encoder().encode(body.transaction));
+    } catch {
+      return actionError(c, "Not a transaction.", 400);
+    }
+    // Only the exact message we issued may be sent, now carrying the owner's signature.
+    if (getBase64Decoder().decode(signed.messageBytes) !== topup.issuedMessage) {
+      return actionError(c, "This is not the transaction that was issued for this top-up.", 400);
+    }
+    let signature: string;
+    try {
+      signature = await sendAndConfirm(
+        ctx.rpc(topup.cluster),
+        signed as Parameters<typeof sendAndConfirm>[1],
+      );
+    } catch (e) {
+      return actionError(c, `Sending failed: ${(e as Error).message}`, 502);
+    }
+    const updated = await checkTopUp(ctx, store.topUp(topup.id) ?? topup, signature);
+    const done: CompletedAction = {
+      type: "completed",
+      icon,
+      title: updated.status === "approved" ? "Top-up approved" : "Sent, confirming…",
+      description: `${topup.agentName} can now pull ${amountText(topup)}. Transaction ${signature}.`,
+      label: updated.status === "approved" ? "Approved" : "Confirming",
+    };
+    return actionJson(c, done, topup.cluster);
   });
 
   app.post(`${path(":id")}/confirm`, async (c) => {

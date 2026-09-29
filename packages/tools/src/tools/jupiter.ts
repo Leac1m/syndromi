@@ -1,6 +1,13 @@
-import { toBaseUnits, toUiAmount } from "@syndromi/core";
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
+import { SURFPOOL_URL, TOKENS, toBaseUnits, toUiAmount } from "@syndromi/core";
 import { z } from "zod";
-import { FORK_DEXES, fetchBuild, lookupTables, swapInstructions } from "../jupiter.js";
+import {
+  type BuildResponse,
+  FORK_DEXES,
+  fetchBuild,
+  lookupTables,
+  swapInstructions,
+} from "../jupiter.js";
 import { buildMessage, TransactionTooLargeError } from "../message.js";
 import { assertSwapsAvailable, resolveToken } from "../tokens.js";
 import { defineTool, type ToolContext } from "../tool.js";
@@ -11,6 +18,13 @@ const swapInput = z.object({
   amount: z.number().positive().describe("Amount of `from` to sell, in whole tokens"),
   slippageBps: z.number().int().min(1).max(300).default(100),
 });
+
+/**
+ * Surfpool copies pool accounts from mainnet once and then freezes them, while Jupiter quotes the
+ * live pool, so the two drift apart (seen: TooLittleOutputReceived / 0x1787-0x1788 at 1%).
+ * Fork only; devnet and mainnet use the requested slippage.
+ */
+export const FORK_MIN_SLIPPAGE_BPS = 300;
 
 async function build(input: z.infer<typeof swapInput>, ctx: ToolContext, maxAccounts?: number) {
   assertSwapsAvailable(ctx);
@@ -23,13 +37,17 @@ async function build(input: z.infer<typeof swapInput>, ctx: ToolContext, maxAcco
       outputMint: to.mint,
       amount: toBaseUnits(input.amount, from.decimals),
       taker: ctx.agent,
-      slippageBps: input.slippageBps,
+      slippageBps:
+        ctx.cluster === "fork"
+          ? Math.max(input.slippageBps, FORK_MIN_SLIPPAGE_BPS)
+          : input.slippageBps,
       // Oracle-priced prop AMMs revert on a fork; route through classic AMMs there.
       ...(ctx.cluster === "fork" ? { dexes: FORK_DEXES } : {}),
       ...(maxAccounts ? { maxAccounts } : {}),
     },
     ctx.jupiter,
   );
+  if (ctx.cluster === "fork") await refreshForkPools(response, ctx);
   const quote = {
     sell: `${toUiAmount(BigInt(response.inAmount), from.decimals)} ${from.symbol}`,
     buy: `${toUiAmount(BigInt(response.outAmount), to.decimals)} ${to.symbol}`,
@@ -59,8 +77,8 @@ export const jupiterSwap = defineTool({
     "transaction that the policy checks; it may execute, wait for owner approval, or be blocked.",
   input: swapInput,
   async run(input, ctx) {
-    // Multi-hop routes can exceed the 1232-byte limit; ask Jupiter for simpler routes until one
-    // fits (Jupiter's documented approach: step maxAccounts down and retry).
+    // Multi-hop routes can exceed the 1232-byte or 64-account limits; ask Jupiter for simpler
+    // routes until one fits (Jupiter's documented approach: step maxAccounts down and retry).
     for (const [i, maxAccounts] of MAX_ACCOUNTS_STEPS.entries()) {
       const { from, to, response, quote } = await build(input, ctx, maxAccounts);
       const { computeBudget, swap } = swapInstructions(response);
@@ -94,6 +112,50 @@ export const jupiterSwap = defineTool({
     throw new Error("unreachable");
   },
 });
+
+/**
+ * Surfpool copies an account from mainnet on first use and then keeps that copy, while Jupiter
+ * routes against live mainnet; stale pools fail with slippage or tick-array errors. Reset the
+ * route's writable accounts (pools, tick arrays, vaults) so the fork re-fetches them now. The
+ * agent's own wallet and token accounts are never reset: they hold fork-local balances.
+ */
+async function refreshForkPools(response: BuildResponse, ctx: ToolContext) {
+  const keep = new Set<string>([ctx.agent]);
+  for (const token of TOKENS) {
+    const [ata] = await findAssociatedTokenPda({
+      owner: ctx.agent,
+      mint: token.mints.mainnet,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+    keep.add(ata);
+  }
+  const accounts = [
+    ...response.setupInstructions,
+    response.swapInstruction,
+    ...(response.cleanupInstruction ? [response.cleanupInstruction] : []),
+  ].flatMap((ix) => ix.accounts);
+  const stale = [
+    ...new Set(
+      accounts
+        .filter((a) => a.isWritable && !a.isSigner && !keep.has(a.pubkey))
+        .map((a) => a.pubkey),
+    ),
+  ];
+  await Promise.all(
+    stale.map((pubkey) =>
+      fetch(SURFPOOL_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "surfnet_resetAccount",
+          params: [pubkey],
+        }),
+      }).catch(() => undefined),
+    ),
+  );
+}
 
 /** undefined = Jupiter's default (64). */
 const MAX_ACCOUNTS_STEPS = [undefined, 48, 36, 28] as const;

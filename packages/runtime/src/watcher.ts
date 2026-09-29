@@ -9,6 +9,8 @@ import type { ActivityLog } from "./activity.js";
 import type { ServerClient } from "./server-client.js";
 
 export const MAX_DRIFT = 1.1;
+/** Passes a failing simulation is retried (with a fresh quote each time) before giving up. */
+export const SIMULATION_ATTEMPTS = 3;
 
 export type WatchResult = {
   executed: string[];
@@ -26,6 +28,8 @@ export async function executeApprovals(opts: {
   log: ActivityLog;
   send: (signed: Transaction) => Promise<Signature>;
   now?: Date;
+  /** Simulation failures per draft, kept by the caller across passes. */
+  attempts?: Map<string, number>;
 }): Promise<WatchResult> {
   const { client, ctx, log } = opts;
   const result: WatchResult = { executed: [], stale: [], failed: [], pulled: [] };
@@ -95,8 +99,21 @@ export async function executeApprovals(opts: {
       await client.reportDraft(draft.id, { status: "stale", error });
       continue;
     }
-    if (outcome.simulationError || !signed.transaction) {
-      await fail(outcome.simulationError ?? "the signer returned no transaction");
+    if (outcome.simulationError) {
+      const tries = (opts.attempts?.get(draft.id) ?? 0) + 1;
+      opts.attempts?.set(draft.id, tries);
+      if (opts.attempts && tries < SIMULATION_ATTEMPTS) {
+        await log.emit("error", {
+          draftId: draft.id,
+          message: `approved draft ${draft.id}: simulation failed (try ${tries}/${SIMULATION_ATTEMPTS}), retrying with a fresh quote: ${outcome.simulationError}`,
+        });
+        continue;
+      }
+      await fail(outcome.simulationError);
+      continue;
+    }
+    if (!signed.transaction) {
+      await fail("the signer returned no transaction");
       continue;
     }
     try {

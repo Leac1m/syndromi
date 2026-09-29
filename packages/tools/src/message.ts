@@ -23,8 +23,8 @@ const MAX_UNITS = 1_400_000;
 
 /** The message would not fit in a transaction (1232 bytes); callers may retry smaller. */
 export class TransactionTooLargeError extends Error {
-  constructor(readonly size: number) {
-    super(`transaction too large: ${size} bytes (max 1232)`);
+  constructor(reason: string) {
+    super(`transaction too large: ${reason}`);
     this.name = "TransactionTooLargeError";
   }
 }
@@ -48,8 +48,18 @@ export async function buildMessage(
     getSetComputeUnitLimitInstruction({ units: MAX_UNITS }),
     unsized,
   );
-  if (!isTransactionMessageWithinSizeLimit(withLimit)) {
-    throw new TransactionTooLargeError(getTransactionMessageSize(withLimit));
+  let fits: boolean;
+  try {
+    fits = isTransactionMessageWithinSizeLimit(withLimit);
+  } catch (error) {
+    // Compiling also enforces the 64-account limit per transaction.
+    if (/unique account addresses/.test((error as Error).message)) {
+      throw new TransactionTooLargeError((error as Error).message);
+    }
+    throw error;
+  }
+  if (!fits) {
+    throw new TransactionTooLargeError(`${getTransactionMessageSize(withLimit)} bytes (max 1232)`);
   }
   let units = FALLBACK_UNITS;
   let simulationError: string | undefined;

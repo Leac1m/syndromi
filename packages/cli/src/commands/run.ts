@@ -64,6 +64,7 @@ export async function run(
       send,
       ...(opts.maxSteps ? { maxSteps: opts.maxSteps } : {}),
     });
+  const attempts = new Map<string, number>();
   const watch = async () => {
     if (!server) return;
     const result = await executeApprovals({
@@ -74,6 +75,7 @@ export async function run(
       ctx: agent.ctx,
       log: new ActivityLog(manifest.name, sinks),
       send,
+      attempts,
     });
     return result;
   };

@@ -93,6 +93,8 @@ suite("jupiter-swap", () => {
     });
     expect(out.proposal.message.feePayer.address).toBe(ctx.agent);
     expect(String(fetch.mock.calls[0]?.[0])).toMatch(/amount=3000000.*dexes=Whirlpool/);
+    // The fork's frozen pool copies drift from Jupiter's live quote: a 3% floor there only.
+    expect(String(fetch.mock.calls[0]?.[0])).toContain("slippageBps=300");
     expect(out.summary).toMatch(/swap 2\.99 USDC → ~0\.025 SOL/);
     expect(out.simulationError).toBeUndefined();
     expect((await evaluate(out.proposal, policy, ctx.prices)).verdict).toBe("allow");

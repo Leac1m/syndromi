@@ -69,6 +69,7 @@ function base58(bytes) {
   return out;
 }
 const fromBase64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+const toBase64 = (bytes) => btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(""));
 
 async function post(href, body) {
   const res = await fetch(href, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -91,7 +92,7 @@ async function load() {
   // Wallets sign and send on their own selected network, whatever chain the page asks for.
   if (link.type === "transaction" && CHAIN !== "solana:mainnet") {
     $("network").hidden = false;
-    $("network").textContent = "Switch your wallet to Solana Devnet first (Phantom: Settings → Developer settings → Testnet mode → Devnet). On mainnet this account has no SOL for fees.";
+    $("network").textContent = "Devnet transaction: your wallet only signs it and syndromi sends it to devnet. If the wallet's preview simulates on mainnet it may warn about fees; the fee is paid on devnet.";
   }
   $("go").textContent = a.disabled ? a.label : link.label;
   $("go").disabled = !!a.disabled;
@@ -114,6 +115,13 @@ async function approve(href) {
     status("Sign the message in " + wallet.name + " (free, no transaction)…");
     const [out] = await wallet.features["solana:signMessage"].signMessage({ account, message: new TextEncoder().encode(res.data) });
     done = await post(res.links.next.href, { account: account.address, signature: base58(out.signature), data: res.data, state: res.state });
+  } else if (res.type === "transaction" && wallet.features["solana:signTransaction"]) {
+    // Sign only; the server sends it to the agent's cluster. Wallets send on their own selected
+    // network, which is not always the one the page asks for.
+    status("Approve the transaction in " + wallet.name + "…");
+    const [out] = await wallet.features["solana:signTransaction"].signTransaction({ account, chain: CHAIN, transaction: fromBase64(res.transaction) });
+    status("Signed. Sending and confirming…");
+    done = await post(ACTION + "/submit", { account: account.address, transaction: toBase64(out.signedTransaction) });
   } else if (res.type === "transaction") {
     status("Approve the transaction in " + wallet.name + " (" + CHAIN + ")…");
     const [out] = await wallet.features["solana:signAndSendTransaction"].signAndSendTransaction({ account, chain: CHAIN, transaction: fromBase64(res.transaction) });

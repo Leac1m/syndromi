@@ -192,6 +192,22 @@ describe("top-up requests", () => {
     expect(
       (await action(`/actions/approve-topup/${id}`, { account: stranger.address })).status,
     ).toBe(403);
+
+    // Only the exact transaction issued for this top-up may be submitted.
+    ctx.store.updateTopUp(id, { issuedMessage: "AAAA" });
+    const other = await action(`/actions/approve-topup/${id}/submit`, {
+      account: owner.address,
+      transaction: `AQ${"A".repeat(86)}AQID`, // one empty signature + a 3-byte "message"
+    });
+    expect(other.status).toBe(400);
+    expect(await other.json()).toMatchObject({
+      message: /not the transaction that was issued|Not a transaction/,
+    });
+    const notOwner = await action(`/actions/approve-topup/${id}/submit`, {
+      account: stranger.address,
+      transaction: "x",
+    });
+    expect(notOwner.status).toBe(400);
   });
 });
 

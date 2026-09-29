@@ -37,7 +37,7 @@ export type RunSummary = {
 };
 
 export async function runOnce(opts: RunOptions): Promise<RunSummary> {
-  const { manifest, provider, tools, log, ctx } = opts;
+  const { provider, tools, log, ctx } = opts;
   const summary: RunSummary = {
     steps: 0,
     reason: "done",

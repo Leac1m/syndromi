@@ -75,7 +75,7 @@ export async function createTelegram(
     if (!isOwner(c.chat?.id)) return c.answerCallbackQuery({ text: "Not allowed." });
     const id = c.match[1] ?? "";
     const record = id.startsWith("d_") ? store.draft(id) : store.topUp(id);
-    if (!record || record.status !== "pending") {
+    if (record?.status !== "pending") {
       return c.answerCallbackQuery({ text: `Already ${record?.status ?? "gone"}.` });
     }
     if (id.startsWith("d_")) bus.emit("draft", store.updateDraft(id, { status: "rejected" }));

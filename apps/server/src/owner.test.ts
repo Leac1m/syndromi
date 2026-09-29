@@ -125,6 +125,20 @@ describe("owner-scoped data", () => {
     const decrypted = await decryptKeypair(stored, SECRET);
     expect(decrypted.signer.address).toBe(agent.address);
 
+    const preview = (await (
+      await req("/owner/preview", {
+        token,
+        body: {
+          manifest: {
+            ...scout?.manifest,
+            permissions: { ...(scout?.manifest.permissions as object), approve_above_usd: 40 },
+          },
+        },
+      })
+    ).json()) as { ok: boolean; errors: string[] };
+    expect(preview.ok).toBe(false);
+    expect(preview.errors.join()).toMatch(/approve_above_usd.*must not exceed max_tx_usd/);
+
     const invalid = await req("/owner/agents", {
       token,
       body: { template: "yield-scout", manifest: { ...scout?.manifest, name: "Bad Name" } },

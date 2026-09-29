@@ -189,6 +189,22 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
 
   owner.get("/templates", async (c) => c.json(await loadTemplates()));
 
+  // Live wizard preview: validate an edited manifest and describe it in plain language.
+  owner.post("/preview", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { manifest?: unknown; runtime?: string };
+    const parsed = manifestSchema.safeParse({
+      ...(body.manifest as object),
+      ...(body.runtime ? { runtime: body.runtime } : {}),
+    });
+    if (!parsed.success) {
+      return c.json({
+        ok: false,
+        errors: parsed.error.issues.map((i) => `${i.path.join(".") || "manifest"}: ${i.message}`),
+      });
+    }
+    return c.json({ ok: true, ruleCard: ruleCard(parsed.data) });
+  });
+
   owner.post("/agents", async (c) => {
     const who = c.get("owner") as Address;
     const body = (await c.req.json().catch(() => ({}))) as {

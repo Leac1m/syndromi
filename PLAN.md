@@ -74,12 +74,18 @@ _Done (Sep 29), on the Surfpool fork with live Gemini: dca-agent pulled 3 USDC a
 
 **Goal:** the owner approves from Telegram by signing, never by clicking a plain link.
 
-- [ ] `apps/server`: SQLite store for agents, drafts, top-up requests, activity.
-- [ ] Solana Actions endpoints: `GET/POST /actions/approve-draft/:id` and `/actions/approve-topup/:id`. The owner signs in their wallet; the top-up action creates a fixed delegation.
-- [ ] Telegram bot: pushes a message with the Blink link for each pending draft/top-up; notifies on BLOCKED events.
-- [ ] Runtime ↔ server: agents post drafts and requests; poll or subscribe for approval; execute on approval; expire stale drafts.
+- [x] `apps/server`: SQLite store for agents, drafts, top-up requests, activity. _(Hono + built-in `node:sqlite`.)_
+- [x] Solana Actions endpoints: `GET/POST /actions/approve-draft/:id` and `/actions/approve-topup/:id`. The owner signs in their wallet; the top-up action creates a fixed delegation. _(Drafts use sign-message; the runtime re-verifies the owner's signature. Top-ups: the wallet signs, the server sends to the agent's cluster and accepts only the transaction it issued, allowing wallet-added compute-budget instructions. dial.to was down, so owners sign in our own Blink viewer at `/approve/:id`.)_
+- [x] Telegram bot: pushes a message with the Blink link for each pending draft/top-up; notifies on BLOCKED events. _(The owner's chat is bound with a one-time `/start` code; Reject button; `/pending`.)_
+- [x] Runtime ↔ server: agents post drafts and requests; poll or subscribe for approval; execute on approval; expire stale drafts. _(The approval watcher runs without the LLM: it re-quotes, re-checks the policy, stays within 10% of the signed USD bound, and retries failed simulations. Drafts expire after 30 min, top-ups after 24 h. CLI: `run --server`, `watch`, `approve`, `request-topup`.)_
 
 **Done when:** a yield-scout draft reaches Telegram, the owner signs, and the swap executes; a top-up request does the same.
+
+_Done (Sep 29), manually with Telegram Desktop and Phantom:_
+- _yield-scout (NVIDIA model, fork) drafted 15 USDC → JitoSOL; the owner signed the message in Phantom; the watcher executed the swap (draft `d_232914fb`, tx `3Jv9Gv…`)._
+- _dca-agent (devnet) top-up of 5 USDC: Phantom signed the delegation (`5gkPyx…`), and the watcher pulled it (`376c64…`)._
+
+_Automated in `packages/cli/src/e2e.fork.test.ts`. Deferred: approving from a phone needs a public URL (Day 6 deploy or a tunnel)._
 
 > **Kickoff prompt:** Day 4. Build apps/server: SQLite store, Solana Actions endpoints for approving drafts and top-ups, and the grammY Telegram bot. Keep @solana/actions and web3.js v1 isolated inside apps/server. Check the current Actions spec in the docs first.
 

@@ -1,6 +1,6 @@
 # syndromí architecture
 
-Status: Day-1 decisions (backed by the spikes in `scripts/`), plus the Day-2 core and Day-3 runtime. Updated 2026-09-29.
+Status: Day-1 decisions (backed by the spikes in `scripts/`), plus the Day-2 core, the Day-3 runtime and the Day-4 approvals. Updated 2026-09-29.
 
 ## Components
 
@@ -233,13 +233,61 @@ Gotchas found on Day 3:
 - **The Pyth trial key lacks the mSOL feed** (403 "Not entitled"); SOL, USDC and JitoSOL work.
   Such prices come from Jupiter automatically. The trial lapses around Oct 13.
 
+## Approvals: server, Blinks, Telegram (Day 4)
+
+```
+agent run ─ needs_approval ─► POST /api/drafts ─► Telegram: "⏸ yield-scout wants approval"
+                                                    [Approve in wallet] [Reject]
+                                                          │
+                              /approve/:id (our Blink viewer, Wallet Standard)
+                              GET  /actions/approve-draft/:id      card
+                              POST /actions/approve-draft/:id      {type:"message", data:<approval text>}
+                              wallet signs the text (free, no transaction)
+                              POST …/verify                        ed25519 vs owner → approved
+                                                          │
+watcher (no LLM): re-verify the owner signature locally → re-run the tool (fresh quote)
+                  → policy (needs approvedDraftId) → value ≤ signed bound × 1.1 → send → "✅ Executed"
+```
+
+**Top-ups** use a transaction Action instead.
+- `POST /actions/approve-topup/:id` returns an unsigned `grantTopUp` (a fixed delegation, 7-day expiry) with the owner as fee payer, plus our own compute budget.
+- The viewer asks the wallet to **sign only**, and `POST …/submit` sends the transaction to the agent's cluster.
+- The server accepts only the transaction it issued (same fee payer, blockhash and instructions; the wallet may add compute-budget instructions).
+- It confirms by finding the delegation account onchain, then the watcher pulls the top-up through the policy signer.
+
+**Trust model.**
+- The approval text names the draft id, the agent, a summary, the USD bound, a sha256 of the canonical draft `{id, agent, tool, input, intent}`, the owner, a nonce and a time.
+- Nonces are single-use.
+- The runtime verifies the signature against the owner it was funded by, not the one the server names. So a compromised server can neither forge an approval nor change a draft after it was signed (the hash wouldn't match).
+- Executing an approved draft still goes through the policy signer; `block` stays final.
+
+Components:
+- `apps/server`: Hono + `node:sqlite`, `@solana/actions-spec` types only;
+- `packages/core/src/approval.ts`: `draftHash`, `approvalMessage`, `verifyOwnerApproval`;
+- `packages/runtime/src/{server-client,watcher}.ts`;
+- CLI: `run --server`, `watch`, `approve`, `request-topup`, and `pnpm server`.
+
+Done-when evidence (2026-09-29, Telegram Desktop + Phantom on the same machine):
+- **Draft:** yield-scout on the fork with NVIDIA muse-glimmer drafted 15 USDC → JitoSOL, which was NEEDS_APPROVAL ($15 > $10). Draft `d_232914fb` arrived in Telegram, the owner signed the message in Phantom, and the watcher executed the swap (`3Jv9Gv…`). Telegram showed ✅ Approved, then ✅ Executed.
+- **Top-up:** dca-agent on devnet requested 5 USDC (`t_1aa1fd55`). Phantom signed `grantTopUp`, the server sent it to devnet (`5gkPyx…`, delegation `56FsC9…`), and the watcher pulled it (`376c64…`); the agent now holds 5 devnet USDC. Telegram showed ✅ approved, then ✅ pulled.
+- The automated equivalent is `packages/cli/src/e2e.fork.test.ts`: approve through the Actions endpoints with the owner key, then execute and pull on the fork.
+
+Gotchas found on Day 4:
+- **dial.to was down** (Vercel `DEPLOYMENT_PAUSED`), so the default is our own viewer at `/approve/:id`. It speaks the same Actions endpoints; `BLINK_VIEWER=dialto` switches the links back.
+- **Telegram rejects `localhost` in button URLs** ("Wrong HTTP URL") but accepts `127.0.0.1`, so `PUBLIC_URL` defaults to `http://127.0.0.1:8787`. Approving from a phone needs a public URL (Day 6).
+- **Phantom ignores the requested chain.** With Testnet mode on Devnet, a Wallet Standard `signAndSendTransaction` with `chain: "solana:devnet"` still simulated on mainnet ("not enough SOL"). Hence sign-only plus the server sending. Phantom's preview may still warn about mainnet fees, which is cosmetic.
+- **Phantom rewrites transactions** by adding `set_compute_unit_price` / `set_compute_unit_limit`. A byte-exact check refused a legitimate signature, so the check is now semantic.
+- **Fork pools go stale.** Surfpool copies an account once and keeps it, while Jupiter quotes live mainnet. That caused Raydium CLMM `TooLittleOutputReceived` (0x1788) and Whirlpool `InvalidTickArraySequence` (0x1787). The swap tool now calls `surfnet_resetAccount` on the route's writable accounts (never the agent's own) so they're re-fetched, and adds a 3% slippage floor on the fork only.
+- **Routes can exceed 64 accounts**, not only 1232 bytes; both trigger the `maxAccounts` step-down.
+
 ## Local dev
 
 - `pnpm spike:delegation [--wait-reset]` runs on devnet and uses the Solana CLI wallet as owner
   (override with `OWNER_KEYPAIR`).
 - `pnpm spike:jupiter [--dexes=<labels>|all]` and `pnpm spike:swig` need Surfpool running (see above).
 - `pnpm demo:core` runs on devnet: create agent → grant → pull → list → revoke, using only `@syndromi/core`.
-- `pnpm test` runs all unit tests. The fork tests (bag, runtime) run only when Surfpool is up on
+- Approvals: add `SYNDROMI_SERVER_TOKEN` to `.env` (e.g. `openssl rand -hex 24`) and run `pnpm server`. Open the printed Telegram link and press Start. Then `pnpm syndromi run <dir> --server http://127.0.0.1:8787` (or `watch <dir>`). `pnpm syndromi approve <id>` approves from the terminal with the owner's CLI key, for fork agents.
+- `pnpm test` runs all unit tests. The fork tests (bag, runtime, approvals e2e) run only when Surfpool is up on
   :8899; the live Gemini test runs only when `GEMINI_API_KEY` is exported.
 - Agent on the fork: `pnpm syndromi init templates/dca-agent`, then `pnpm syndromi fund
   templates/dca-agent --fork`, then `pnpm syndromi run templates/dca-agent --once --fork`.

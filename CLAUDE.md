@@ -40,11 +40,11 @@ The Foundation gave Solana allowances. syndromí turns them into safe, governabl
 
 - TypeScript everywhere, pnpm workspaces monorepo, Node 20+.
 - `@solana/kit` as the Solana client. `@solana/subscriptions` for the delegation program. Pin the **kit 7** line (subscriptions 0.5 peers on kit ^7); see `docs/architecture.md`.
-- `@solana/actions` (depends on web3.js v1) isolated inside `apps/server` only. Do not leak web3.js v1 types into `packages/core`.
-- LLM: provider-agnostic interface. Implement Anthropic (BYOK) and one OpenAI-compatible endpoint (for open models).
+- Solana Actions: spec types from `@solana/actions-spec` (types only) in `apps/server`; no `@solana/actions` and no web3.js v1 anywhere. Draft approvals are sign-message Actions (owner signs a text naming the draft hash and USD bound; server and runtime both verify it); top-up approvals are transaction Actions (fixed delegation). The owner signs in our own Blink viewer (`/approve/:id`, Wallet Standard); dial.to was down on Day 4 (`BLINK_VIEWER=dialto` restores it).
+- LLM: provider-agnostic interface. Implement Anthropic (BYOK) and one OpenAI-compatible endpoint (for open models). Test model: NVIDIA `meta/muse-glimmer-30b` via `https://integrate.api.nvidia.com/v1` (`NVIDIA_API_KEY`); Gemini is a quota-limited fallback (`run --model gemini:<id>`).
 - Tools follow an MCP-compatible shape (`name`, `description`, `inputSchema`) plus a permission manifest: `kind: "read" | "write"`. Only `write` tools may produce transactions, and they only return **unsigned** transactions to the policy signer.
 - Prices: a `PriceSource` in `packages/core`. Keyless Jupiter Price API v3 by default. When `PYTH_API_KEY` is set, Pyth Hermes goes first and Jupiter fills any gap per request (Hermes has required a key since the Aug 26, 2026 Pyth Core upgrade; our key is a 14-day trial from Sep 29 and lacks the mSOL feed). Swaps: Jupiter Swap API v2 `/build`, with `maxAccounts` stepped down when a route won't fit in 1232 bytes.
-- Server: Fastify or Hono. Persistence: SQLite (better-sqlite3 or drizzle).
+- Server: Hono. Persistence: Node's built-in `node:sqlite`.
 - Dashboard: Next.js + Phantom Connect.
 - Telegram: grammY.
 - Tests: Vitest; LiteSVM or Surfpool for transaction-level tests.

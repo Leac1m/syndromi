@@ -1,7 +1,8 @@
 // Telegram: the owner's approval inbox. Long polling (no webhook or public URL needed).
 // Linking: the server prints https://t.me/<bot>?start=<one-time code>; /start <code> binds that
-// chat, and every other chat is ignored. Approve buttons open the Blink on dial.to, so approving
-// always means signing in the wallet; Reject needs no signature.
+// chat, and every other chat is ignored. Approve buttons open the Blink (our viewer at
+// /approve/:id, or dial.to), so approving always means signing in the wallet; Reject needs no
+// signature. Telegram rejects "localhost" in button URLs; 127.0.0.1 works.
 import { explorerTx, tokenByMint, toUiAmount } from "@syndromi/core";
 import { Bot, InlineKeyboard, type Transformer } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
@@ -81,13 +82,21 @@ export async function createTelegram(
       .catch((e) => console.error("telegram:", (e as Error).message));
   }
 
+  // Our own Blink viewer by default; BLINK_VIEWER=dialto uses dial.to (when it is up).
+  const approveUrl = (id: string) =>
+    config.env.BLINK_VIEWER === "dialto"
+      ? blinkUrl(
+          config.publicUrl,
+          `/actions/approve-${id.startsWith("d_") ? "draft" : "topup"}/${id}`,
+        )
+      : `${config.publicUrl}/approve/${id}`;
   const draftKeyboard = (d: DraftRecord) =>
     new InlineKeyboard()
-      .url("Approve in wallet", blinkUrl(config.publicUrl, `/actions/approve-draft/${d.id}`))
+      .url("Approve in wallet", approveUrl(d.id))
       .text("Reject", `reject:${d.id}`);
   const topUpKeyboard = (t: TopUpRecord) =>
     new InlineKeyboard()
-      .url("Approve in wallet", blinkUrl(config.publicUrl, `/actions/approve-topup/${t.id}`))
+      .url("Approve in wallet", approveUrl(t.id))
       .text("Reject", `reject:${t.id}`);
 
   function draftMessage(d: DraftRecord): string {

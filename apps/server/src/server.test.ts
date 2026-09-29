@@ -195,6 +195,19 @@ describe("top-up requests", () => {
   });
 });
 
+describe("approve page", () => {
+  it("serves the Blink viewer for a draft, wired to its Action and owner", async () => {
+    const { id } = await newDraft();
+    const res = await app.request(`/approve/${id}`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(`const ACTION = "/actions/approve-draft/${id}"`);
+    expect(html).toContain(`OWNER = "${owner.address}"`);
+    expect(html).toContain("solana:signMessage");
+    expect((await app.request("/approve/d_nope")).status).toBe(404);
+  });
+});
+
 describe("Telegram", () => {
   it("binds the owner's chat with the one-time code, then pushes drafts with a Blink button", async () => {
     const calls: { method: string; payload: Record<string, unknown> }[] = [];
@@ -249,9 +262,7 @@ describe("Telegram", () => {
     expect(pushed?.payload.chat_id).toBe("42");
     expect(String(pushed?.payload.text)).toMatch(/yield-scout<\/b> wants approval/);
     const buttons = JSON.stringify(pushed?.payload.reply_markup);
-    expect(buttons).toContain(
-      `https://dial.to/?action=${encodeURIComponent(`solana-action:http://localhost:8787/actions/approve-draft/${id}`)}`,
-    );
+    expect(buttons).toContain(`"url":"http://localhost:8787/approve/${id}"`);
     expect(buttons).toContain(`reject:${id}`);
 
     ctx.bus.emit("activity", "dca-agent", {

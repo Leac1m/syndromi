@@ -20,7 +20,7 @@ if (!token) {
 
 const store = new Store(env.SYNDROMI_DB ?? join(syndromiHome(env.SYNDROMI_HOME), "server.db"));
 const ctx = createContext(store, {
-  publicUrl: (env.PUBLIC_URL ?? `http://localhost:${port}`).replace(/\/+$/, ""),
+  publicUrl: (env.PUBLIC_URL || `http://127.0.0.1:${port}`).replace(/\/+$/, ""),
   token,
   env,
   draftTtlMs: 30 * 60 * 1000,

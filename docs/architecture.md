@@ -122,8 +122,47 @@ for the injection demo. Add Swig as a second, onchain layer only if Days 2–3 f
 it's now a proven first stretch item, not a research risk. The pitch line it enables is: "even a
 compromised agent host can only swap via Jupiter, within its cap."
 
+## `packages/core` (Day 2)
+
+| Module | What it does |
+|---|---|
+| `policy.ts` | `evaluate(proposal, policy, prices)` → `allow / needs_approval / block` with every reason; `createPolicySigner` wraps the agent key and signs only `allow` (or `needs_approval` with an approved draft id). |
+| `bag.ts` | Owner: `ensureSubscriptionAuthority`, `grantAllowance`, `grantTopUp`, `revoke`, `revokeAll({ agent?, hard? })`. Agent: `pullAllowance`, `pullTopUp`. Reads: `listDelegations` with remaining-this-period. Writes return plain instructions (CLI sends them; dashboard hands them to Phantom). |
+| `manifest.ts` | zod schema + `parseManifest` (one readable line per error) + `toPolicy`. |
+| `agent-wallet.ts` | scrypt + AES-256-GCM encrypted keypairs under `~/.syndromi/agents/<name>/`, or `SYNDROMI_AGENT_KEY_<NAME>` for hosted agents. |
+| `prices.ts` | `PriceSource`: keyless Jupiter Price API v3 by default, Pyth Hermes when `PYTH_API_KEY` is set. |
+| `tokens.ts`, `programs.ts` | Pinned mints (verified) and manifest program names → program IDs. |
+
+Policy checks, in order:
+1. The agent must be the fee payer.
+2. Every top-level program must be allowlisted (compute-budget is always allowed).
+3. Token, system, ATA and subscriptions instructions are decoded:
+   - `Approve` and `SetAuthority` always block;
+   - transfers, closes, SOL sends, ATA creation and allowance pulls must go to an allowed owner.
+
+   So allowlisting the token program (which Jupiter needs) never means "send anywhere". This
+   closes offchain the same gap the Swig spike found onchain.
+4. The USD value is the larger of the tool-declared intent and the decoded outflows. Above
+   `max_tx_usd` blocks; above `approve_above_usd`, or with any unpriced asset, needs approval.
+
+Known limits:
+- Value moved *inside* a Jupiter CPI is taken from the tool-built intent (Jupiter's `inAmount`).
+- Simulation-based balance diffs are Day-6 hardening.
+
+Gotchas found on Day 2:
+- **Subscription Authority first.** `createRecurringDelegation` / `createFixedDelegation` read
+  the authority's init id while building the instruction. The authority can't be created in the
+  same transaction, so the first grant per (owner, mint) takes two transactions.
+- **Delegation accounts don't store their nonce.** `grantTopUp` finds the next free nonce by
+  deriving PDAs from 1 upward.
+- **Surfpool can't reliably create new mints.** `createMint` hung for about 30 s and failed with
+  kit's opaque `Cannot destructure property 'err'` error. Fork tests use mainnet USDC funded by
+  `surfnet_setTokenAccount`; devnet (`pnpm demo:core`) creates a fresh mint without trouble.
+
 ## Local dev
 
 - `pnpm spike:delegation [--wait-reset]` runs on devnet and uses the Solana CLI wallet as owner
   (override with `OWNER_KEYPAIR`).
 - `pnpm spike:jupiter [--dexes=<labels>|all]` and `pnpm spike:swig` need Surfpool running (see above).
+- `pnpm demo:core` runs on devnet: create agent → grant → pull → list → revoke, using only `@syndromi/core`.
+- `pnpm test` runs all unit tests; the bag's fork test runs only when Surfpool is up on :8899.

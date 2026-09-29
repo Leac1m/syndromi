@@ -38,11 +38,11 @@ Each day has a goal, tasks, a "done when" check, and a kickoff prompt to paste i
 
 **Goal:** the money and safety primitives, tested.
 
-- [ ] Manifest schema (zod) + parser + validation errors a human can read.
-- [ ] Bag client: init Subscription Authority, grant recurring allowance, grant fixed top-up, revoke one, revoke all, read delegation state.
-- [ ] Agent wallet: generate, encrypt/decrypt locally (passphrase), load hosted keys from env.
-- [ ] Policy signer: checks program allowlist, destination allowlist, per-tx USD cap (via Pyth price), and approval threshold. Returns `allow | needs_approval | block` with a reason. Only `allow` signs.
-- [ ] Tests: policy decisions table-driven; delegation flows against Surfpool or LiteSVM.
+- [x] Manifest schema (zod) + parser + validation errors a human can read. _(`templates/*/manifest.yaml` added; prompts are Day 3.)_
+- [x] Bag client: init Subscription Authority, grant recurring allowance, grant fixed top-up, revoke one, revoke all, read delegation state. _(The authority must land before the first grant, so the first grant per mint takes two transactions.)_
+- [x] Agent wallet: generate, encrypt/decrypt locally (passphrase), load hosted keys from env.
+- [x] Policy signer: checks program allowlist, destination allowlist, per-tx USD cap (via Pyth price), and approval threshold. Returns `allow | needs_approval | block` with a reason. Only `allow` signs. _(Prices come from a `PriceSource`: keyless Jupiter by default, Pyth when `PYTH_API_KEY` is set. `needs_approval` signs only with an approved draft id. Deferred to Day 6: simulation-based outflow checks inside swap CPIs.)_
+- [x] Tests: policy decisions table-driven; delegation flows against Surfpool or LiteSVM. _(48 tests. The Surfpool flow is skipped when the fork isn't running. `pnpm demo:core` passes on devnet.)_
 
 **Done when:** `pnpm test` passes and a script can create an agent, grant it an allowance, and pull.
 

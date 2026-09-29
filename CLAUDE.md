@@ -43,7 +43,7 @@ The Foundation gave Solana allowances. syndromí turns them into safe, governabl
 - `@solana/actions` (depends on web3.js v1) isolated inside `apps/server` only. Do not leak web3.js v1 types into `packages/core`.
 - LLM: provider-agnostic interface. Implement Anthropic (BYOK) and one OpenAI-compatible endpoint (for open models).
 - Tools follow an MCP-compatible shape (`name`, `description`, `inputSchema`) plus a permission manifest: `kind: "read" | "write"`. Only `write` tools may produce transactions, and they only return **unsigned** transactions to the policy signer.
-- Prices: Pyth Hermes client (offchain reads). Swaps: Jupiter Swap API.
+- Prices: a `PriceSource` in `packages/core`. Keyless Jupiter Price API v3 by default; Pyth Hermes when `PYTH_API_KEY` is set (Hermes has required a key since the Aug 26, 2026 Pyth Core upgrade). Swaps: Jupiter Swap API v2 `/build`.
 - Server: Fastify or Hono. Persistence: SQLite (better-sqlite3 or drizzle).
 - Dashboard: Next.js + Phantom Connect.
 - Telegram: grammY.

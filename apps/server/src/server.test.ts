@@ -1,13 +1,28 @@
 import {
+  AccountRole,
   type Address,
+  appendTransactionMessageInstructions,
+  blockhash,
+  compileTransaction,
+  createTransactionMessage,
   generateKeyPairSigner,
   getBase58Decoder,
   getUtf8Encoder,
+  type Instruction,
   type KeyPairSigner,
+  pipe,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
   signBytes,
 } from "@solana/kit";
+import { SUBSCRIPTIONS_PROGRAM_ADDRESS } from "@solana/subscriptions";
+import {
+  getSetComputeUnitLimitInstruction,
+  getSetComputeUnitPriceInstruction,
+} from "@solana-program/compute-budget";
 import type { Transformer } from "grammy";
 import { beforeEach, describe, expect, it } from "vitest";
+import { describeMessage } from "./actions/approve-topup.js";
 import { createApp } from "./app.js";
 import { createContext, type ServerContext } from "./context.js";
 import { Store } from "./db.js";
@@ -201,13 +216,58 @@ describe("top-up requests", () => {
     });
     expect(other.status).toBe(400);
     expect(await other.json()).toMatchObject({
-      message: /not the transaction that was issued|Not a transaction/,
+      message: /not the transaction that was issued|Not a transaction|Could not read/,
     });
     const notOwner = await action(`/actions/approve-topup/${id}/submit`, {
       account: stranger.address,
       transaction: "x",
     });
     expect(notOwner.status).toBe(400);
+  });
+});
+
+describe("describeMessage (what a submitted top-up may differ in)", () => {
+  it("ignores compute-budget instructions a wallet adds, and nothing else", async () => {
+    const payer = owner.address;
+    const base = (ixs: Instruction[], feePayer: Address = payer) =>
+      compileTransaction(
+        pipe(
+          createTransactionMessage({ version: 0 }),
+          (m) => setTransactionMessageFeePayer(feePayer, m),
+          (m) =>
+            setTransactionMessageLifetimeUsingBlockhash(
+              {
+                blockhash: blockhash("11111111111111111111111111111111"),
+                lastValidBlockHeight: 1n,
+              },
+              m,
+            ),
+          (m) => appendTransactionMessageInstructions(ixs, m),
+        ),
+      ).messageBytes;
+    const grant = (amount: number): Instruction => ({
+      programAddress: SUBSCRIPTIONS_PROGRAM_ADDRESS,
+      accounts: [{ address: payer, role: AccountRole.WRITABLE_SIGNER }],
+      data: new Uint8Array([7, amount]),
+    });
+    const issued = describeMessage(
+      base([getSetComputeUnitLimitInstruction({ units: 50_000 }), grant(5)]),
+    );
+    const phantom = describeMessage(
+      base([
+        getSetComputeUnitPriceInstruction({ microLamports: 99_999n }),
+        getSetComputeUnitLimitInstruction({ units: 80_000 }),
+        grant(5),
+      ]),
+    );
+    expect(phantom).toBe(issued);
+    expect(describeMessage(base([grant(50)]))).not.toBe(issued);
+    expect(describeMessage(base([grant(5)], stranger.address))).not.toBe(issued);
+    const extra: Instruction = {
+      programAddress: SUBSCRIPTIONS_PROGRAM_ADDRESS,
+      data: new Uint8Array([1]),
+    };
+    expect(describeMessage(base([grant(5), extra]))).not.toBe(issued);
   });
 });
 

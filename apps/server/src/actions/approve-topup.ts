@@ -14,14 +14,24 @@ import {
   appendTransactionMessageInstructions,
   compileTransaction,
   createTransactionMessage,
+  decompileTransactionMessage,
   getBase64Decoder,
   getBase64EncodedWireTransaction,
   getBase64Encoder,
+  getCompiledTransactionMessageDecoder,
   getTransactionDecoder,
   pipe,
+  prependTransactionMessageInstructions,
+  type ReadonlyUint8Array,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/kit";
+import {
+  COMPUTE_BUDGET_PROGRAM_ADDRESS,
+  estimateComputeUnitLimitFactory,
+  getSetComputeUnitLimitInstruction,
+  getSetComputeUnitPriceInstruction,
+} from "@solana-program/compute-budget";
 import { grantTopUp, sendAndConfirm, tokenByMint, toUiAmount } from "@syndromi/core";
 import type { Context, Hono } from "hono";
 import type { ServerContext } from "../context.js";
@@ -89,18 +99,28 @@ export function mountApproveTopUp(app: Hono, ctx: ServerContext, icon: string) {
     } catch (e) {
       return actionError(c, `Could not build the top-up: ${(e as Error).message}`, 500);
     }
-    const { value: blockhash } = await ctx.rpc(topup.cluster).getLatestBlockhash().send();
+    const rpc = ctx.rpc(topup.cluster);
+    const { value: blockhash } = await rpc.getLatestBlockhash().send();
+    const unsized = pipe(
+      createTransactionMessage({ version: 0 }),
+      (m) => setTransactionMessageFeePayer(topup.owner, m),
+      (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
+      (m) => appendTransactionMessageInstructions(built.instructions, m),
+    );
+    // Our own compute budget, so wallets have less reason to rewrite the transaction.
+    const units = await estimateComputeUnitLimitFactory({ rpc })(unsized).catch(() => 150_000);
     const transaction = compileTransaction(
-      pipe(
-        createTransactionMessage({ version: 0 }),
-        (m) => setTransactionMessageFeePayer(topup.owner, m),
-        (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
-        (m) => appendTransactionMessageInstructions(built.instructions, m),
+      prependTransactionMessageInstructions(
+        [
+          getSetComputeUnitLimitInstruction({ units: Math.ceil(units * 1.3) }),
+          getSetComputeUnitPriceInstruction({ microLamports: 10_000n }),
+        ],
+        unsized,
       ),
     );
     store.updateTopUp(topup.id, {
       delegation: built.delegation,
-      issuedMessage: getBase64Decoder().decode(transaction.messageBytes),
+      issuedMessage: describeMessage(transaction.messageBytes),
     });
     const body: TransactionResponse = {
       type: "transaction",
@@ -128,8 +148,15 @@ export function mountApproveTopUp(app: Hono, ctx: ServerContext, icon: string) {
     } catch {
       return actionError(c, "Not a transaction.", 400);
     }
-    // Only the exact message we issued may be sent, now carrying the owner's signature.
-    if (getBase64Decoder().decode(signed.messageBytes) !== topup.issuedMessage) {
+    // Only what we issued may be sent: same payer, blockhash and instructions. Wallets may add
+    // compute-budget instructions (Phantom adds a priority fee) and nothing else.
+    let submitted: string;
+    try {
+      submitted = describeMessage(signed.messageBytes);
+    } catch {
+      return actionError(c, "Could not read the signed transaction.", 400);
+    }
+    if (submitted !== topup.issuedMessage) {
       return actionError(c, "This is not the transaction that was issued for this top-up.", 400);
     }
     let signature: string;
@@ -168,5 +195,28 @@ export function mountApproveTopUp(app: Hono, ctx: ServerContext, icon: string) {
       label: updated.status === "approved" ? "Approved" : "Confirming",
     };
     return actionJson(c, done, topup.cluster);
+  });
+}
+
+/**
+ * A canonical description of what a message does, ignoring compute-budget instructions:
+ * fee payer, blockhash, and each other instruction's program, accounts (with roles) and data.
+ */
+export function describeMessage(messageBytes: ReadonlyUint8Array): string {
+  const message = decompileTransactionMessage(
+    getCompiledTransactionMessageDecoder().decode(messageBytes),
+  );
+  const b64 = getBase64Decoder();
+  return JSON.stringify({
+    feePayer: message.feePayer.address,
+    blockhash:
+      "blockhash" in message.lifetimeConstraint ? message.lifetimeConstraint.blockhash : "nonce",
+    instructions: message.instructions
+      .filter((ix) => ix.programAddress !== COMPUTE_BUDGET_PROGRAM_ADDRESS)
+      .map((ix) => ({
+        program: ix.programAddress,
+        accounts: (ix.accounts ?? []).map((a) => [a.address, a.role]),
+        data: ix.data ? b64.decode(ix.data) : "",
+      })),
   });
 }

@@ -11,6 +11,8 @@ export type AgentView = {
   feeBudgetSol?: number;
   ruleCard: string[];
   funded: boolean;
+  demo?: boolean;
+  nextRun?: number | null;
   allowanceLeft?: { remaining: number; limit: number; periodEndsAt?: number };
   topUps: { remaining: number; expiresAt: number }[];
   pending: number;
@@ -131,6 +133,8 @@ export const api = {
       manifest,
       runtime,
     }),
+  runNow: (name: string) =>
+    call<{ started: boolean }>(`/owner/agents/${encodeURIComponent(name)}/run`, {}),
   createHosted: (template: string, cluster: Network, manifest: unknown) =>
     call<AgentView>("/owner/agents", { template, cluster, manifest }),
 };

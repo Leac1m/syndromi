@@ -120,6 +120,7 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
       return {
         ...publicAgent(a),
         funded: Boolean(allowance),
+        nextRun: a.runtime === "hosted" ? (ctx.hosted?.nextRun?.(a.name)?.getTime() ?? null) : null,
         allowanceLeft: allowance
           ? {
               remaining: toUiAmount(allowance.remaining, 6),
@@ -352,6 +353,8 @@ export function publicAgent(a: AgentRecord) {
     rules: a.rules,
     ruleCard: card,
     registeredAt: a.registeredAt,
+    /** Demo-only agents (the injection demo) are labelled as such in the dashboard. */
+    demo: Boolean(a.manifest && (a.manifest as { demo?: unknown }).demo),
   };
 }
 

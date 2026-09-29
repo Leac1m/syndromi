@@ -61,13 +61,17 @@ export async function createTelegram(
     if (!isOwner(c.chat.id)) return;
     const link = (cluster: string) =>
       `${config.publicUrl}/blink?action=${encodeURIComponent(`/actions/kill-switch?cluster=${cluster}`)}`;
+    const keyboard = new InlineKeyboard()
+      .url("Revoke all (devnet)", link("devnet"))
+      .url("Revoke all (mainnet)", link("mainnet"));
+    const phoneDevnet = phoneUrl(link("devnet"));
+    const phoneMainnet = phoneUrl(link("mainnet"));
+    if (phoneDevnet && phoneMainnet) {
+      keyboard.row().url("Phone: devnet", phoneDevnet).url("Phone: mainnet", phoneMainnet);
+    }
     return c.reply(
       "🛑 Kill switch: revoke every allowance and top-up. Sign in your wallet to confirm.",
-      {
-        reply_markup: new InlineKeyboard()
-          .url("Revoke all (devnet)", link("devnet"))
-          .url("Revoke all (mainnet)", link("mainnet")),
-      },
+      { reply_markup: keyboard },
     );
   });
 
@@ -104,14 +108,20 @@ export async function createTelegram(
           `/actions/approve-${id.startsWith("d_") ? "draft" : "topup"}/${id}`,
         )
       : `${config.publicUrl}/approve/${id}`;
-  const draftKeyboard = (d: DraftRecord) =>
-    new InlineKeyboard()
-      .url("Approve in wallet", approveUrl(d.id))
-      .text("Reject", `reject:${d.id}`);
-  const topUpKeyboard = (t: TopUpRecord) =>
-    new InlineKeyboard()
-      .url("Approve in wallet", approveUrl(t.id))
-      .text("Reject", `reject:${t.id}`);
+  // On a phone there is no wallet extension: Phantom's browse deep link opens the page inside
+  // Phantom's in-app browser. Only offered when the server has a public https URL (the tunnel).
+  const phoneUrl = (page: string) =>
+    config.publicUrl.startsWith("https://")
+      ? `https://phantom.app/ul/browse/${encodeURIComponent(page)}?ref=${encodeURIComponent(config.publicUrl)}`
+      : undefined;
+  const approvalKeyboard = (id: string) => {
+    const keyboard = new InlineKeyboard().url("Approve in wallet", approveUrl(id));
+    const phone = phoneUrl(`${config.publicUrl}/approve/${id}`);
+    if (phone) keyboard.url("Open in Phantom (phone)", phone);
+    return keyboard.row().text("Reject", `reject:${id}`);
+  };
+  const draftKeyboard = (d: DraftRecord) => approvalKeyboard(d.id);
+  const topUpKeyboard = (t: TopUpRecord) => approvalKeyboard(t.id);
 
   function draftMessage(d: DraftRecord): string {
     const agent = store.agent(d.agentName);

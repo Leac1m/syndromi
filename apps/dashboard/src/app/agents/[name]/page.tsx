@@ -4,6 +4,7 @@ import { use } from "react";
 import { ActionPanel } from "@/components/action-panel";
 import { ActivityFeed } from "@/components/activity-feed";
 import { useApp } from "@/components/providers";
+import { RunNow } from "@/components/run-now";
 import { Card, RuleCard } from "@/components/ui";
 import { api } from "@/lib/api";
 import { short } from "@/lib/config";
@@ -36,7 +37,17 @@ export default function AgentPage({ params }: { params: Promise<{ name: string }
           </span>
         }
       >
+        {agent?.demo && (
+          <p className="mb-3 rounded-lg border border-warn px-3 py-2 text-sm text-warn">
+            Demo agent: it is deliberately fed a prompt injection to show the policy blocking it.
+          </p>
+        )}
         {agent && <RuleCard lines={agent.ruleCard} />}
+        {agent?.runtime === "hosted" && agent.funded && (
+          <div className="mt-4">
+            <RunNow name={agent.name} nextRun={agent.nextRun ?? null} />
+          </div>
+        )}
       </Card>
       <Card title={agent?.funded ? "Allowance" : "Fund this agent"}>
         {agent?.funded && agent.allowanceLeft ? (

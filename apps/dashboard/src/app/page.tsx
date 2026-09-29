@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ActionPanel } from "@/components/action-panel";
 import { ActivityFeed } from "@/components/activity-feed";
 import { useApp } from "@/components/providers";
+import { RunNow } from "@/components/run-now";
 import { Card } from "@/components/ui";
 import { api } from "@/lib/api";
 import { usePoll } from "@/lib/use-poll";
@@ -67,6 +68,11 @@ export default function Overview() {
                   className="flex items-center gap-2"
                 >
                   <span className="mr-auto font-medium">{a.name}</span>
+                  {a.demo && (
+                    <span className="rounded border border-warn px-1.5 py-0.5 text-xs text-warn">
+                      demo
+                    </span>
+                  )}
                   <span className="rounded bg-line px-1.5 py-0.5 text-xs">{a.runtime}</span>
                   {a.pending > 0 && (
                     <span className="rounded bg-warn px-1.5 py-0.5 text-xs text-white">
@@ -79,6 +85,11 @@ export default function Overview() {
                     ? `${a.allowanceLeft.remaining} of ${a.allowanceLeft.limit} ${a.allowance?.mint ?? ""} left this ${a.allowance?.period.replace(/ly$/, "")}`
                     : "Needs funding"}
                 </p>
+                {a.runtime === "hosted" && a.funded && (
+                  <div className="mt-1.5">
+                    <RunNow name={a.name} nextRun={a.nextRun ?? null} />
+                  </div>
+                )}
               </li>
             ))}
           </ul>

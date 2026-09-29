@@ -390,6 +390,17 @@ describe("Telegram", () => {
     const buttons = JSON.stringify(pushed?.payload.reply_markup);
     expect(buttons).toContain(`"url":"http://localhost:8787/approve/${id}"`);
     expect(buttons).toContain(`reject:${id}`);
+    expect(buttons).not.toContain("phantom.app"); // no phone button without an https URL
+
+    // With a public https URL (the tunnel), a phone button opens the page inside Phantom.
+    ctx.config.publicUrl = "https://demo.trycloudflare.com";
+    const second = await newDraft();
+    await new Promise((r) => setTimeout(r, 0));
+    const phoneButtons = JSON.stringify(calls.at(-1)?.payload.reply_markup);
+    const page = `https://demo.trycloudflare.com/approve/${second.id}`;
+    expect(phoneButtons).toContain(
+      `https://phantom.app/ul/browse/${encodeURIComponent(page)}?ref=${encodeURIComponent("https://demo.trycloudflare.com")}`,
+    );
 
     ctx.bus.emit("activity", "dca-agent", {
       type: "blocked",

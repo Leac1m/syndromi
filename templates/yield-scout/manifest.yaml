@@ -1,0 +1,14 @@
+# Looks for a better yield (e.g. USDC → a liquid staking token) and drafts the move. Hosted.
+name: yield-scout
+runtime: hosted
+model: openai-compatible:https://generativelanguage.googleapis.com/v1beta/openai
+schedule: "*/15 * * * *"
+allowance: { mint: USDC, amount: 50, period: weekly }
+fee_budget: { sol: 0.02 }
+permissions:
+  programs: [jupiter, subscriptions]
+  destinations: [self]
+  max_tx_usd: 25
+  approve_above_usd: 10
+tools: [pyth-price, jupiter-quote, jupiter-swap, balances, pull-allowance, request-topup]
+prompt: ./prompt.md

@@ -1,0 +1,14 @@
+# Buys a little SOL with USDC every day, from its own weekly allowance. Runs locally.
+name: dca-agent
+runtime: local
+model: openai-compatible:https://generativelanguage.googleapis.com/v1beta/openai
+schedule: "0 9 * * *"
+allowance: { mint: USDC, amount: 20, period: weekly }
+fee_budget: { sol: 0.02 }
+permissions:
+  programs: [jupiter, subscriptions]
+  destinations: [self]
+  max_tx_usd: 10
+  approve_above_usd: 5
+tools: [pyth-price, balances, jupiter-quote, jupiter-swap, pull-allowance]
+prompt: ./prompt.md

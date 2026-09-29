@@ -328,10 +328,34 @@ export function createPolicySigner(opts: {
       const decision = await evaluate(proposal, opts.policy, opts.prices);
       const approved = decision.verdict === "needs_approval" && Boolean(approval.approvedDraftId);
       if (decision.verdict !== "allow" && !approved) return { decision };
-      const message = setTransactionMessageFeePayerSigner(opts.signer, proposal.message);
+      const message = setTransactionMessageFeePayerSigner(
+        opts.signer,
+        withoutEmbeddedSigners(proposal.message),
+      );
       return { decision, transaction: await signTransactionMessageWithSigners(message) };
     },
   };
 }
 
 export type PolicySigner = ReturnType<typeof createPolicySigner>;
+
+/**
+ * Drops signer objects that tools embedded in account metas (e.g. a noop signer for the agent,
+ * which program builders require). Only the policy signer's own key ever signs; a transaction
+ * that needs any other signature fails to sign instead of being signed by a tool's signer.
+ */
+export function withoutEmbeddedSigners<M extends ProposalMessage>(message: M): M {
+  const instructions = message.instructions.map((ix) =>
+    ix.accounts
+      ? Object.freeze({
+          ...ix,
+          accounts: ix.accounts.map((meta) => {
+            if (!("signer" in meta)) return meta;
+            const { signer: _signer, ...rest } = meta as typeof meta & { signer: unknown };
+            return Object.freeze(rest);
+          }),
+        })
+      : ix,
+  );
+  return Object.freeze({ ...message, instructions }) as unknown as M;
+}

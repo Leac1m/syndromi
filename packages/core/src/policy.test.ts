@@ -2,6 +2,7 @@ import {
   type Address,
   appendTransactionMessageInstructions,
   blockhash,
+  createNoopSigner,
   createTransactionMessage,
   generateKeyPairSigner,
   type Instruction,
@@ -376,6 +377,36 @@ describe("createPolicySigner()", () => {
     });
     expect(result.decision.verdict).toBe("block");
     expect(result.transaction).toBeUndefined();
+  });
+
+  it("signs only with its own key, ignoring signers that tools embedded", async () => {
+    // Program builders need a signer object for the agent; tools pass a noop one.
+    const noopAgent = createNoopSigner(agent.address);
+    const selfTransfer = getTransferCheckedInstruction({
+      source: agentAta,
+      mint: USDC,
+      destination: agentAta,
+      authority: noopAgent,
+      amount: usdc(1),
+      decimals: 6,
+    });
+    const result = await signer().sign(proposal(1, [selfTransfer]));
+    expect(result.decision.verdict).toBe("allow");
+    expect(result.transaction?.signatures[agent.address]).toBeTruthy();
+
+    // A foreign signer embedded by a tool is never used: signing fails rather than co-signing.
+    const stranger = await generateKeyPairSigner();
+    const withStranger = getTransferCheckedInstruction({
+      source: agentAta,
+      mint: USDC,
+      destination: agentAta,
+      authority: stranger,
+      amount: usdc(1),
+      decimals: 6,
+    });
+    const policy = { ...basePolicy, programs: ["token" as const] };
+    const strict = createPolicySigner({ signer: agent, policy, prices });
+    await expect(strict.sign(proposal(1, [withStranger]))).rejects.toThrow();
   });
 
   it("refuses proposals for a different agent", async () => {

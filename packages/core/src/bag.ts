@@ -110,7 +110,7 @@ export async function grantAllowance(
 export async function grantTopUp(
   client: BagClient,
   args: { agent: Address; mint: Address; amount: bigint; expiresInSeconds?: number },
-): Promise<{ instructions: Instruction[]; nonce: bigint }> {
+): Promise<{ instructions: Instruction[]; nonce: bigint; delegation: Address }> {
   await requireSubscriptionAuthority(client, args.mint);
   // Delegation accounts don't store their nonce, so find the first unused PDA from 1 upward.
   const taken = new Set(
@@ -121,14 +121,15 @@ export async function grantTopUp(
     tokenMint: args.mint,
   });
   let nonce = 1n;
+  let delegation: Address;
   for (; ; nonce++) {
-    const [pda] = await findFixedDelegationPda({
+    [delegation] = await findFixedDelegationPda({
       subscriptionAuthority: authority,
       delegator: client.payer.address,
       delegatee: args.agent,
       nonce,
     });
-    if (!taken.has(pda)) break;
+    if (!taken.has(delegation)) break;
   }
   const instructions = [
     await client.subscriptions.instructions.createFixedDelegation({
@@ -140,7 +141,7 @@ export async function grantTopUp(
       expiryTs: nowSeconds() + BigInt(args.expiresInSeconds ?? 7 * 86_400),
     }),
   ];
-  return { instructions, nonce };
+  return { instructions, nonce, delegation };
 }
 
 export async function revoke(client: BagClient, delegation: Address): Promise<Instruction[]> {

@@ -15,7 +15,8 @@
     "spike:jupiter": "pnpm --filter @syndromi/scripts spike:jupiter",
     "spike:swig": "pnpm --filter @syndromi/scripts spike:swig",
     "demo:core": "pnpm --filter @syndromi/scripts demo:core",
-    "syndromi": "tsx --env-file-if-exists=.env packages/cli/src/main.ts"
+    "syndromi": "tsx --env-file-if-exists=.env packages/cli/src/main.ts",
+    "server": "tsx --env-file-if-exists=.env apps/server/src/main.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",

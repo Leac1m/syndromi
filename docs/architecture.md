@@ -1,6 +1,6 @@
 # syndromí architecture
 
-Status: Day-1 decisions (backed by the spikes in `scripts/`), plus the Day-2 core, the Day-3 runtime and the Day-4 approvals. Updated 2026-09-29.
+Status: Day-1 decisions (backed by the spikes in `scripts/`), plus the Day-2 core, the Day-3 runtime, the Day-4 approvals and the Day-5 dashboard. Updated 2026-09-29.
 
 ## Components
 
@@ -280,6 +280,47 @@ Gotchas found on Day 4:
 - **Fork pools go stale.** Surfpool copies an account once and keeps it, while Jupiter quotes live mainnet. That caused Raydium CLMM `TooLittleOutputReceived` (0x1788) and Whirlpool `InvalidTickArraySequence` (0x1787). The swap tool now calls `surfnet_resetAccount` on the route's writable accounts (never the agent's own) so they're re-fetched, and adds a 3% slippage floor on the fork only.
 - **Routes can exceed 64 accounts**, not only 1232 bytes; both trigger the `maxAccounts` step-down.
 
+## Dashboard (Day 5)
+
+`apps/dashboard` uses Next 16, `@phantom/react-sdk` (extension only) and Tailwind 4, on port 3000 by default; `next dev --port 3001` if 3000 is taken. It's a Blink client over the server's Actions plus an owner-scoped read API.
+
+| Screen | What it does |
+|---|---|
+| Overview `/` | Bag (USDC, SOL, allocated per period), agents (remaining this period, pending), inline approvals, activity feed (3 s poll, BLOCKED in red, explorer links), kill switch |
+| New agent `/agents/new` | Template → budget and rules → live rule card (`POST /owner/preview`) → hosted: `POST /owner/agents`, then `fund-agent`; local: the `syndromi init --server --owner` command, wait for registration, then `fund-agent` |
+| Agent `/agents/[name]` | Rule card, allowance left and reset time, top-ups, that agent's activity |
+
+**Owner sessions.**
+- `POST /owner/session/challenge` → the wallet signs the text → `POST /owner/session` → a 12 h token.
+- Every `/owner/*` route is scoped to that address, and CORS only allows `DASHBOARD_ORIGINS`.
+- Hosted agent keys are encrypted with `SYNDROMI_HOSTED_SECRET` and never returned.
+
+**Owner transactions** (`apps/server/src/owner-tx.ts`) are one mechanism for fund-agent, kill switch and top-ups.
+- The server builds each transaction with its own compute budget and records its description (fee payer, blockhash, non-compute-budget instructions).
+- `POST /actions/tx/:id/submit` sends only a matching, owner-signed transaction to the right cluster.
+- `…/confirm` serves Blink clients that sent the transaction themselves.
+- A per-kind completion returns the next chained Action or completes. Examples: "Step 1 of 2: let your bag grant allowances" → "Sign & fund"; the kill switch chains while delegations remain.
+- The CLI's `syndromi action <path>` drives the same Actions with the owner key; it's used by the fork e2e test.
+
+Rule card: `ruleCard(manifest)` in core states the budget and rules in plain language. It's used by the wizard, the agent page and the fund-agent Blink.
+
+Done-when evidence (2026-09-29, devnet, Phantom and Telegram Desktop):
+1. Sign-in.
+2. Hosted `yield-scout1` created and funded (`8ooGVn…`).
+3. Local `dca-agent` registered with `init --server --owner` and funded from the wizard (`4YvrawV…`).
+4. A 5 USDC top-up approved inline (`5xf47Z…`) and pulled by the watcher (`56T2xn…`).
+5. Kill switch (`4m6YDA…`), after which `syndromi status` showed 0 delegations.
+
+The feed and Telegram showed every step.
+
+Gotchas found on Day 5:
+- **The Phantom React SDK's `signTransaction` expects web3.js objects.** It goes through Phantom's injected API and calls `.serialize()` ("r.serialize is not a function" with kit transactions). The dashboard signs raw bytes with the Wallet Standard `solana:signTransaction` instead, and uses the SDK for connecting, `signMessage` and `switchNetwork`.
+- **Hydration mismatch** from reading `sessionStorage` during the first render; the session is now read after mount.
+- **The Blink viewer's inline script broke** when a regex lost its backslash inside the page's template string. Tests now compile the inline scripts.
+- **Fork clock.** Resetting pool accounts brings mainnet-fresh timestamps; a lagging fork clock tripped Whirlpool `InvalidTimestamp` (6022). The swap tool calls `surfnet_timeTravel` to now first.
+- **Supply chain.** pnpm's `minimumReleaseAge` had been bypassed by auto-added exclusions for hours-old releases (next 16.3.7, hono 4.13.11, @hono/node-server 2.1.3). They're removed and pinned to settled versions (next 16.3.6, hono 4.13.9, @hono/node-server 2.1.1), and the lockfile was rebuilt under the policy.
+- **Port 3000** was used by another local app; `DASHBOARD_ORIGINS` must include the port the dashboard really runs on.
+
 ## Local dev
 
 - `pnpm spike:delegation [--wait-reset]` runs on devnet and uses the Solana CLI wallet as owner
@@ -287,6 +328,7 @@ Gotchas found on Day 4:
 - `pnpm spike:jupiter [--dexes=<labels>|all]` and `pnpm spike:swig` need Surfpool running (see above).
 - `pnpm demo:core` runs on devnet: create agent → grant → pull → list → revoke, using only `@syndromi/core`.
 - Approvals: add `SYNDROMI_SERVER_TOKEN` to `.env` (e.g. `openssl rand -hex 24`) and run `pnpm server`. Open the printed Telegram link and press Start. Then `pnpm syndromi run <dir> --server http://127.0.0.1:8787` (or `watch <dir>`). `pnpm syndromi approve <id>` approves from the terminal with the owner's CLI key, for fork agents.
+- Dashboard: `pnpm server` (with `SYNDROMI_HOSTED_SECRET` for hosted agents), then `pnpm --filter @syndromi/dashboard dev`, and open http://localhost:3000.
 - `pnpm test` runs all unit tests. The fork tests (bag, runtime, approvals e2e) run only when Surfpool is up on
   :8899; the live Gemini test runs only when `GEMINI_API_KEY` is exported.
 - Agent on the fork: `pnpm syndromi init templates/dca-agent`, then `pnpm syndromi fund

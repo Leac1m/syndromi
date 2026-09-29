@@ -95,14 +95,23 @@ _Automated in `packages/cli/src/e2e.fork.test.ts`. Deferred: approving from a ph
 
 **Goal:** the screens that make the video look like a product.
 
-- [ ] Phantom Connect sign-in.
-- [ ] Bag view: USDC balance, total allocated per period, list of delegations.
-- [ ] Create-agent wizard: pick template → edit allowance/permissions → **rule card** preview in plain language → owner signs delegation + fee-budget transfer.
-- [ ] Agent list with status, remaining allowance this period, pending approvals (approve inline via the same Actions).
-- [ ] Activity feed (readable events, BLOCKED in red).
-- [ ] Kill switch: revoke all delegations in one signature where possible.
+- [x] Phantom Connect sign-in. _(`@phantom/react-sdk`, extension only; the owner signs a one-time message and gets a 12 h session.)_
+- [x] Bag view: USDC balance, total allocated per period, list of delegations.
+- [x] Create-agent wizard: pick template → edit allowance/permissions → **rule card** preview in plain language → owner signs delegation + fee-budget transfer. _(Hosted: the server creates and encrypts the key. Local: the wizard shows the `syndromi init --server --owner` command, then funds. Funding is the `fund-agent` Action, with a setup step chained when needed.)_
+- [x] Agent list with status, remaining allowance this period, pending approvals (approve inline via the same Actions).
+- [x] Activity feed (readable events, BLOCKED in red).
+- [x] Kill switch: revoke all delegations in one signature where possible. _(Also a Blink: Telegram `/kill`.)_
 
 **Done when:** the full demo can be driven from the dashboard plus Telegram without touching the CLI except for the local agent.
+
+_Done (Sep 29) on devnet with Phantom, using the dashboard and Telegram:_
+- _sign in;_
+- _create hosted yield-scout, then fund it (`8ooGVn…`);_
+- _`syndromi init --server --owner` for local dca-agent, then fund it from the wizard (`4YvrawV…`);_
+- _approve a 5 USDC top-up inline (`5xf47Z…`), which the watcher pulled (`56T2xn…`);_
+- _kill switch (`4m6YDA…`), leaving 0 delegations onchain. The feed and Telegram showed each step._
+
+_Deferred: Google/Apple embedded wallets (need a Phantom Portal App ID); running hosted agents (Day 6); BLOCKED from a live agent run in the feed (Day 6 injection demo)._
 
 > **Kickoff prompt:** Day 5. Build apps/dashboard in Next.js with Phantom Connect. Priority order: create-agent wizard with rule card, activity feed, kill switch, then bag view polish. Keep styling simple and consistent.
 

@@ -34,7 +34,7 @@ The Foundation gave Solana allowances. syndromí turns them into safe, governabl
 - **Agent wallet** = a keypair per agent. Local: encrypted keypair file under `~/.syndromi/`. Hosted: server-held keypair from env/secret store for the hackathon (managed MPC/TEE custody is roadmap).
 - **Fee budget** = small SOL transfer from owner to agent wallet at creation (covers tx fees and token-account rent).
 - **Policy layer** = a signer wrapper in `packages/core`. Nothing signs without passing it. Swig smart-wallet permissions passed the Day-1 spike (see `docs/architecture.md`). They are a first stretch item layered on top of the offchain signer, never a replacement for it.
-- **Network**: devnet by default. Jupiter is mainnet-only, so swaps are tested against a Surfpool mainnet fork (verify on Day 1) and the final demo does one real mainnet run with a few dollars.
+- **Network**: devnet by default. Jupiter is mainnet-only, so swaps are tested against a Surfpool mainnet fork. **The recorded demo runs on mainnet with a few dollars** (decided Day 5: Phantom cannot reach the fork). Build and rehearse on devnet and the fork first; use a fresh owner wallet with about $30 USDC + 0.05 SOL.
 
 ## Stack
 
@@ -45,7 +45,7 @@ The Foundation gave Solana allowances. syndromí turns them into safe, governabl
 - Tools follow an MCP-compatible shape (`name`, `description`, `inputSchema`) plus a permission manifest: `kind: "read" | "write"`. Only `write` tools may produce transactions, and they only return **unsigned** transactions to the policy signer.
 - Prices: a `PriceSource` in `packages/core`. Keyless Jupiter Price API v3 by default. When `PYTH_API_KEY` is set, Pyth Hermes goes first and Jupiter fills any gap per request (Hermes has required a key since the Aug 26, 2026 Pyth Core upgrade; our key is a 14-day trial from Sep 29 and lacks the mSOL feed). Swaps: Jupiter Swap API v2 `/build`, with `maxAccounts` stepped down when a route won't fit in 1232 bytes.
 - Server: Hono. Persistence: Node's built-in `node:sqlite`.
-- Dashboard: Next.js + Phantom Connect.
+- Dashboard: Next.js 16 + `@phantom/react-sdk` (Phantom Connect, extension only for now). It connects and signs messages through the SDK and signs transactions through the Wallet Standard (`solana:signTransaction`, raw bytes; the SDK's signTransaction expects web3.js objects). The dashboard is a Blink client over the server's Actions: the server builds every owner transaction and sends it after the wallet signs.
 - Telegram: grammY.
 - Tests: Vitest; LiteSVM or Surfpool for transaction-level tests.
 

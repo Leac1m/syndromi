@@ -137,12 +137,12 @@ async function approve(href) {
     status("Sign the message in " + wallet.name + " (free, no transaction)…");
     const [out] = await wallet.features["solana:signMessage"].signMessage({ account, message: new TextEncoder().encode(res.data) });
     next = await post(res.links.next.href, { account: account.address, signature: base58(out.signature), data: res.data, state: res.state });
-  } else if (res.type === "transaction" && wallet.features["solana:signTransaction"] && //confirm$/.test(res.links.next.href)) {
+  } else if (res.type === "transaction" && wallet.features["solana:signTransaction"] && res.links.next.href.endsWith("/confirm")) {
     // Sign only; the server sends it to the right cluster (wallets send on their own network).
     status("Approve the transaction in " + wallet.name + "…");
     const [out] = await wallet.features["solana:signTransaction"].signTransaction({ account, chain: CHAIN, transaction: fromBase64(res.transaction) });
     status("Signed. Sending and confirming…");
-    next = await post(res.links.next.href.replace(//confirm$/, "/submit"), { account: account.address, transaction: toBase64(out.signedTransaction) });
+    next = await post(res.links.next.href.slice(0, -"/confirm".length) + "/submit", { account: account.address, transaction: toBase64(out.signedTransaction) });
   } else if (res.type === "transaction") {
     status("Approve the transaction in " + wallet.name + " (" + CHAIN + ")…");
     const [out] = await wallet.features["solana:signAndSendTransaction"].signAndSendTransaction({ account, chain: CHAIN, transaction: fromBase64(res.transaction) });

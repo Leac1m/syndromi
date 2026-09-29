@@ -321,6 +321,15 @@ describe("approve page", () => {
     expect(html).toContain(`const ACTION = "/actions/approve-draft/${id}"`);
     expect(html).toContain(`OWNER = "${owner.address}"`);
     expect(html).toContain("solana:signMessage");
+    // The inline script must parse (a lost backslash once turned a regex into a comment).
+    const script = html.slice(html.indexOf("<script>") + 8, html.indexOf("</script>"));
+    expect(() => new Function(script)).not.toThrow();
+    const blink = await (
+      await app.request("/blink?action=/actions/kill-switch?cluster=devnet")
+    ).text();
+    expect(
+      () => new Function(blink.slice(blink.indexOf("<script>") + 8, blink.indexOf("</script>"))),
+    ).not.toThrow();
     expect((await app.request("/approve/d_nope")).status).toBe(404);
   });
 });

@@ -95,6 +95,10 @@ export class ServerClient {
     };
   }
 
+  reject(kind: "draft" | "topup", id: string) {
+    return this.call(`/api/${kind === "draft" ? "drafts" : "topups"}/${id}/reject`, {});
+  }
+
   reportDraft(
     id: string,
     result: { status: "executed" | "failed" | "stale"; signature?: string; error?: string },

@@ -1,8 +1,7 @@
 // pnpm server: approvals API, Solana Actions (Blinks), Telegram bot, and housekeeping.
 import { join } from "node:path";
-import { serve } from "@hono/node-server";
 import { syndromiHome } from "@syndromi/core";
-import { createApp } from "./app.js";
+import { listen } from "./app.js";
 import { createContext } from "./context.js";
 import { Store } from "./db.js";
 import { startSweeper } from "./sweeper.js";
@@ -28,7 +27,7 @@ const ctx = createContext(store, {
   topUpTtlMs: 24 * 60 * 60 * 1000,
 });
 
-serve({ fetch: createApp(ctx).fetch, port });
+await listen(ctx, port);
 console.log(`syndromi server on http://localhost:${port} (public: ${ctx.config.publicUrl})`);
 startSweeper(ctx);
 

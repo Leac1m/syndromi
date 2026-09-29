@@ -1,36 +1,37 @@
 import { join } from "node:path";
-import { agentDir, type Cluster, loadLocalKeypair, sendAndConfirm } from "@syndromi/core";
+import { type Cluster, sendAndConfirm } from "@syndromi/core";
 import {
   ActivityLog,
+  type ActivitySink,
+  type ApprovalGateway,
   consoleSink,
   createProvider,
+  executeApprovals,
   fileSink,
+  HttpApprovalGateway,
+  httpSink,
   LocalApprovalGateway,
-  modelOverride,
-  prepareAgent,
   runOnce,
   schedule,
 } from "@syndromi/runtime";
-import { createToolset } from "@syndromi/tools";
-import { confirmMainnet, type Env, loadAgentDir, passphrase, readAgentConfig } from "../context.js";
-import { CliError, type Io } from "../io.js";
+import { confirmMainnet, type Env } from "../context.js";
+import type { Io } from "../io.js";
+import { openAgent, serverFrom } from "../session.js";
 
-/** `syndromi run <dir> [--once]`: run the agent now, or on its manifest schedule. */
+export const WATCH_EVERY_MS = 5_000;
+
+/**
+ * `syndromi run <dir> [--once] [--server <url>]`: run the agent now or on its schedule. With a
+ * server, drafts go to Telegram and approved ones are executed by the watcher.
+ */
 export async function run(
   dir: string,
-  opts: { cluster: Cluster; once: boolean; maxSteps?: number; model?: string },
+  opts: { cluster: Cluster; once: boolean; maxSteps?: number; model?: string; server?: string },
   io: Io,
   env: Env,
 ) {
-  const loaded = await loadAgentDir(dir);
-  const { prompt } = loaded;
-  // --model swaps the model id for this run only (e.g. when a free-tier quota runs out).
-  const manifest = opts.model
-    ? { ...loaded.manifest, ...modelOverride(opts.model) }
-    : loaded.manifest;
-  const config = await readAgentConfig(manifest.name, env);
-  if (!config.owner)
-    throw new CliError(`agent "${manifest.name}" has no allowance yet; run: syndromi fund ${dir}`);
+  const session = await openAgent(dir, opts, io, env);
+  const { manifest, agent, tools, home } = session;
   await confirmMainnet(opts.cluster, io, `run agent ${manifest.name}, which may send transactions`);
   if (manifest.runtime === "hosted") {
     io.print(
@@ -38,48 +39,74 @@ export async function run(
     );
   }
 
-  const home = agentDir(manifest.name, env.SYNDROMI_HOME);
-  const { signer: agentSigner } = await loadLocalKeypair(manifest.name, await passphrase(io, env), {
-    root: env.SYNDROMI_HOME,
-  });
-  const agent = prepareAgent({
-    manifest,
-    cluster: opts.cluster,
-    agentSigner,
-    owner: config.owner,
-    env,
-  });
+  const server = serverFrom(opts.server, env);
+  const sinks: ActivitySink[] = [consoleSink(io.print), fileSink(join(home, "activity.jsonl"))];
+  let approvals: ApprovalGateway = new LocalApprovalGateway(home);
+  if (server) {
+    await server.register(session.registration);
+    sinks.push(httpSink(server, manifest.name));
+    approvals = new HttpApprovalGateway(server, manifest.name);
+    io.print(`server  ${opts.server ?? env.SYNDROMI_SERVER_URL} (drafts go to Telegram)`);
+  }
+  const send = (tx: Parameters<typeof sendAndConfirm>[1]) => sendAndConfirm(agent.rpc, tx);
   const provider = createProvider(manifest, env);
-  const tools = createToolset(manifest.tools);
-  const approvals = new LocalApprovalGateway(home);
-  const sinks = [consoleSink(io.print), fileSink(join(home, "activity.jsonl"))];
 
   const once = () =>
     runOnce({
       manifest,
-      prompt,
+      prompt: session.prompt,
       provider,
       tools,
       signer: agent.signer,
       ctx: agent.ctx,
       log: new ActivityLog(manifest.name, sinks),
       approvals,
-      send: (tx) => sendAndConfirm(agent.rpc, tx),
+      send,
       ...(opts.maxSteps ? { maxSteps: opts.maxSteps } : {}),
     });
+  const watch = async () => {
+    if (!server) return;
+    const result = await executeApprovals({
+      client: server,
+      agentName: manifest.name,
+      tools,
+      signer: agent.signer,
+      ctx: agent.ctx,
+      log: new ActivityLog(manifest.name, sinks),
+      send,
+    });
+    return result;
+  };
 
-  if (opts.once) return once();
+  if (opts.once) {
+    await watch(); // anything approved since the last run executes first
+    return once();
+  }
 
   const job = schedule(manifest.schedule, once, {
     onError: (error) => io.print(`run failed: ${(error as Error).message}`),
     onSkip: () => io.print("previous run still in progress; skipping this tick"),
   });
+  let watching = false;
+  const timer = server
+    ? setInterval(() => {
+        if (watching) return;
+        watching = true;
+        void watch()
+          .catch((e) => io.print(`watcher: ${(e as Error).message}`))
+          .finally(() => {
+            watching = false;
+          });
+      }, WATCH_EVERY_MS)
+    : undefined;
   io.print(
-    `scheduled "${manifest.schedule}"; next run ${job.next()?.toISOString()} (Ctrl+C to stop)`,
+    `scheduled "${manifest.schedule}"; next run ${job.next()?.toISOString()}` +
+      `${server ? "; watching for approvals every 5 s" : ""} (Ctrl+C to stop)`,
   );
   await new Promise<void>((resolve) => {
     process.once("SIGINT", () => {
       job.stop();
+      if (timer) clearInterval(timer);
       resolve();
     });
   });

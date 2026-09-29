@@ -19,5 +19,8 @@
     "@syndromi/core": "workspace:*",
     "@syndromi/runtime": "workspace:*",
     "@syndromi/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@syndromi/server": "workspace:*"
   }
 }

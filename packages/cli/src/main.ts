@@ -2,25 +2,33 @@
 // syndromi: create, fund, run, and revoke budgeted Solana agents.
 import { parseArgs } from "node:util";
 import { redact } from "@syndromi/core";
+import { approve } from "./commands/approve.js";
 import { fund } from "./commands/fund.js";
 import { init } from "./commands/init.js";
+import { requestTopUp } from "./commands/request-topup.js";
 import { revoke } from "./commands/revoke.js";
 import { run } from "./commands/run.js";
 import { status } from "./commands/status.js";
+import { watch } from "./commands/watch.js";
 import { clusterFrom, type Env } from "./context.js";
 import { CliError, type Io, terminalIo } from "./io.js";
 
 const HELP = `syndromi <command>
 
-  init <template|dir> [--dir <path>]   copy a template and create the agent's encrypted key
-  fund <dir>                           owner: send the fee budget and grant the allowance
-  run <dir> [--once] [--max-steps n] [--model [nvidia|gemini|anthropic:]id]
-                                       run now (--once) or on the manifest schedule
-  status                               list the bag's delegations and what is left
-  revoke --all | --agent <name> [--hard]   kill switch: revoke delegations
+  init <template|dir> [--dir <path>]      copy a template and create the agent's encrypted key
+  fund <dir>                              owner: send the fee budget and grant the allowance
+  run <dir> [--once] [--server <url>] [--max-steps n] [--model [nvidia|gemini|anthropic:]id]
+                                          run now (--once) or on the schedule; with a server,
+                                          drafts go to Telegram and approvals are executed
+  watch <dir> [--once] [--server <url>]   execute owner approvals only (no LLM)
+  approve <id> [--reject] [--server <url>]   owner: approve or reject from the terminal
+  request-topup <dir> --amount n --reason "…" [--server <url>]
+  status                                  list the bag's delegations and what is left
+  revoke --all | --agent <name> [--hard]  kill switch: revoke delegations
 
 Cluster: devnet by default; --fork for a local Surfpool mainnet fork; --mainnet (asks to confirm).
-Env: SYNDROMI_PASSPHRASE, OWNER_KEYPAIR, SYNDROMI_HOME, RPC_API_KEY, plus the manifest's api_key_env.`;
+Env: SYNDROMI_PASSPHRASE, OWNER_KEYPAIR, SYNDROMI_HOME, RPC_API_KEY, SYNDROMI_SERVER_URL,
+SYNDROMI_SERVER_TOKEN, plus the manifest's api_key_env.`;
 
 export async function main(argv: string[], io: Io = terminalIo, env: Env = process.env) {
   const { values, positionals } = parseArgs({
@@ -31,6 +39,10 @@ export async function main(argv: string[], io: Io = terminalIo, env: Env = proce
       once: { type: "boolean" },
       "max-steps": { type: "string" },
       model: { type: "string" },
+      server: { type: "string" },
+      reject: { type: "boolean" },
+      amount: { type: "string" },
+      reason: { type: "string" },
       fork: { type: "boolean" },
       mainnet: { type: "boolean" },
       all: { type: "boolean" },
@@ -59,11 +71,46 @@ export async function main(argv: string[], io: Io = terminalIo, env: Env = proce
           once: Boolean(values.once),
           ...(maxSteps ? { maxSteps } : {}),
           ...(values.model ? { model: values.model } : {}),
+          ...(values.server ? { server: values.server } : {}),
         },
         io,
         env,
       );
     }
+    case "watch":
+      return watch(
+        needTarget(),
+        {
+          cluster,
+          once: Boolean(values.once),
+          ...(values.server ? { server: values.server } : {}),
+        },
+        io,
+        env,
+      );
+    case "approve":
+      return approve(
+        needTarget(),
+        {
+          cluster,
+          ...(values.reject ? { reject: true } : {}),
+          ...(values.server ? { server: values.server } : {}),
+        },
+        io,
+        env,
+      );
+    case "request-topup":
+      return requestTopUp(
+        needTarget(),
+        {
+          cluster,
+          ...(values.amount ? { amount: values.amount } : {}),
+          ...(values.reason ? { reason: values.reason } : {}),
+          ...(values.server ? { server: values.server } : {}),
+        },
+        io,
+        env,
+      );
     case "status":
       return status({ cluster }, io, env);
     case "revoke":

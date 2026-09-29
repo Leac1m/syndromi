@@ -113,6 +113,25 @@ export function mountApi(app: Hono, ctx: ServerContext) {
     });
   });
 
+  // Owner-side rejects from the CLI (Telegram has its own button).
+  app.post("/api/drafts/:id/reject", (c) => {
+    const draft = store.draft(c.req.param("id"));
+    if (!draft) return c.json({ error: "no such draft" }, 404);
+    if (draft.status !== "pending") return c.json({ error: `draft is ${draft.status}` }, 409);
+    const updated = store.updateDraft(draft.id, { status: "rejected" });
+    bus.emit("draft", updated);
+    return c.json(serialize(updated));
+  });
+
+  app.post("/api/topups/:id/reject", (c) => {
+    const topup = store.topUp(c.req.param("id"));
+    if (!topup) return c.json({ error: "no such top-up" }, 404);
+    if (topup.status !== "pending") return c.json({ error: `top-up is ${topup.status}` }, 409);
+    const updated = store.updateTopUp(topup.id, { status: "rejected" });
+    bus.emit("topup", updated);
+    return c.json(serialize(updated));
+  });
+
   app.post("/api/drafts/:id/result", async (c) => {
     const body = (await c.req.json()) as {
       status: "executed" | "failed" | "stale";

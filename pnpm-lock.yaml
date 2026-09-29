@@ -244,6 +244,10 @@ importers:
       '@syndromi/tools':
         specifier: workspace:*
         version: link:../tools
+    devDependencies:
+      '@syndromi/server':
+        specifier: workspace:*
+        version: link:../../apps/server
 
   packages/core:
     dependencies:

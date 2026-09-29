@@ -25,7 +25,7 @@ import {
   ServerClient,
   useTools,
 } from "@syndromi/runtime";
-import { createContext, listen, Store } from "@syndromi/server";
+import { createContext, HostedRuntime, listen, Store } from "@syndromi/server";
 import { createToolset } from "@syndromi/tools";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Io } from "./io.js";
@@ -175,4 +175,89 @@ describe.skipIf(!surfpoolUp)("approvals end to end on the fork", () => {
     expect(await listDelegations(agent.rpc, ownerKey.signer.address)).toEqual([]);
     expect(io.lines.join("\n")).toMatch(/Everything revoked/);
   });
+
+  it("hosted: deploy → fund → the server runs it → owner approves → the server executes", {
+    timeout: 300_000,
+  }, async () => {
+    const hostedStore = new Store(":memory:");
+    const ctx = createContext(hostedStore, {
+      publicUrl: "http://localhost",
+      token: "e2e-token",
+      env: { SYNDROMI_HOSTED_SECRET: "an-e2e-secret-that-is-at-least-32-chars" },
+      draftTtlMs: 30 * 60 * 1000,
+      topUpTtlMs: 60 * 60 * 1000,
+      dashboardOrigins: [],
+    });
+    // The server runs the agent with a scripted model: pull 15 USDC, propose a $15 swap.
+    const hosted = new HostedRuntime(ctx, {
+      schedule: false,
+      providerFor: () =>
+        new ScriptedProvider([
+          useTools(call("pull-allowance", { amount: 15 })),
+          useTools(call("jupiter-swap", { from: "USDC", to: "JitoSOL", amount: 15 })),
+          finish("Proposed 15 USDC → JitoSOL."),
+        ]),
+    });
+    ctx.hosted = hosted;
+    const hostedServer = await listen(ctx, 0);
+    try {
+      const home = await mkdtemp(join(tmpdir(), "syndromi-hosted-"));
+      const ownerKey = await generateAgentKeypair();
+      const ownerPath = join(home, "owner.json");
+      await writeFile(ownerPath, JSON.stringify(Array.from(ownerKey.secretKey)));
+      const env = {
+        SYNDROMI_HOME: join(home, ".syndromi"),
+        OWNER_KEYPAIR: ownerPath,
+        SYNDROMI_SERVER_URL: `http://127.0.0.1:${hostedServer.port}`,
+        SYNDROMI_SERVER_TOKEN: "e2e-token",
+      };
+      const io = quietIo();
+      const owner = ownerKey.signer.address;
+      await fetch(SURFPOOL_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "surfnet_setAccount",
+          params: [owner, { lamports: 2_000_000_000 }],
+        }),
+      });
+      await fetch(SURFPOOL_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "surfnet_setTokenAccount",
+          params: [owner, "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", { amount: 100_000_000 }],
+        }),
+      });
+
+      await main(
+        ["deploy", join(ROOT, "templates/yield-scout"), "--fork", "--owner", owner],
+        io,
+        env,
+      );
+      expect(hostedStore.agent("yield-scout")).toMatchObject({
+        runtime: "hosted",
+        cluster: "fork",
+      });
+      await main(["action", "/actions/fund-agent/yield-scout", "--fork"], io, env);
+
+      await hosted.runAndWait("yield-scout");
+      const [draft] = hostedStore.drafts({ agentName: "yield-scout" });
+      expect(draft?.status).toBe("pending");
+
+      await main(["approve", String(draft?.id)], io, env);
+      await hosted.watchAll();
+      const executed = hostedStore.draft(String(draft?.id));
+      expect(executed?.status, executed?.resultError).toBe("executed");
+    } finally {
+      hosted.stop();
+      hostedServer.close();
+    }
+  });
 });
+
+const ROOT = new URL("../../../", import.meta.url).pathname;

@@ -19,6 +19,8 @@
     "@solana/kit-plugin-signer": "^0.13.0",
     "@solana/subscriptions": "^0.5.0",
     "@syndromi/core": "workspace:*",
+    "@syndromi/runtime": "workspace:*",
+    "@syndromi/tools": "workspace:*",
     "grammy": "^1.46.0",
     "hono": "4.13.9"
   },

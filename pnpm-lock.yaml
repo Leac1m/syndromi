@@ -186,7 +186,7 @@ importers:
     dependencies:
       '@phantom/react-sdk':
         specifier: ^2.0.3
-        version: 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(react@19.3.0)(typescript@7.0.2)(zod@4.6.5)
+        version: 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(react@19.3.0)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)
       '@solana/kit':
         specifier: ^7.1.1
         version: 7.1.1(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)
@@ -242,6 +242,12 @@ importers:
       '@syndromi/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@syndromi/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      '@syndromi/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
       grammy:
         specifier: ^1.46.0
         version: 1.46.0
@@ -3346,12 +3352,12 @@ snapshots:
 
   '@oxc-project/types@0.151.0': {}
 
-  '@phantom/api-key-stamper@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)':
+  '@phantom/api-key-stamper@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)':
     dependencies:
       '@phantom/base64url': 2.0.3
-      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
       '@phantom/crypto': 2.0.3
-      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
       axios: 1.15.2(debug@4.4.3)
       bs58: 6.0.0
       buffer: 6.0.3
@@ -3362,12 +3368,12 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@phantom/auth2@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)':
+  '@phantom/auth2@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)':
     dependencies:
       '@phantom/base64url': 2.0.3
       '@phantom/crypto': 2.0.3
       '@phantom/openapi-wallet-service': 0.1.11(debug@4.4.3)
-      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
       axios: 1.15.2(debug@4.4.3)
       bs58: 6.0.0
       buffer: 6.0.3
@@ -3381,11 +3387,11 @@ snapshots:
 
   '@phantom/base64url@2.0.3': {}
 
-  '@phantom/browser-injected-sdk@2.0.2(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)':
+  '@phantom/browser-injected-sdk@2.0.2(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)':
     dependencies:
-      '@phantom/chain-interfaces': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)
-      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
-      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/chain-interfaces': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)
+      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
+      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
     transitivePeerDependencies:
       - '@gql.tada/svelte-support'
       - '@gql.tada/vue-support'
@@ -3397,18 +3403,18 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@phantom/browser-sdk@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)':
+  '@phantom/browser-sdk@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)':
     dependencies:
-      '@phantom/auth2': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/auth2': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
       '@phantom/base64url': 2.0.3
-      '@phantom/browser-injected-sdk': 2.0.2(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)
-      '@phantom/chain-interfaces': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)
-      '@phantom/client': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
-      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
-      '@phantom/embedded-provider-core': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)
-      '@phantom/indexed-db-stamper': 2.0.2(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)
-      '@phantom/parsers': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)
-      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/browser-injected-sdk': 2.0.2(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)
+      '@phantom/chain-interfaces': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)
+      '@phantom/client': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
+      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
+      '@phantom/embedded-provider-core': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)
+      '@phantom/indexed-db-stamper': 2.0.2(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)
+      '@phantom/parsers': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)
+      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
       axios: 1.15.2(debug@4.4.3)
       bs58: 6.0.0
       buffer: 6.0.3
@@ -3426,11 +3432,11 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@phantom/chain-interfaces@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)':
+  '@phantom/chain-interfaces@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)':
     dependencies:
-      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
-      '@phantom/parsers': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)
-      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
+      '@phantom/parsers': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)
+      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
     transitivePeerDependencies:
       - '@gql.tada/svelte-support'
       - '@gql.tada/vue-support'
@@ -3442,19 +3448,19 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@phantom/client@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)':
+  '@phantom/client@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)':
     dependencies:
-      '@phantom/api-key-stamper': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/api-key-stamper': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
       '@phantom/base64url': 2.0.3
-      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
       '@phantom/crypto': 2.0.3
       '@phantom/openapi-wallet-service': 0.1.11(debug@4.4.3)
-      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
       '@phantom/utils': 2.0.3
       axios: 1.15.2(debug@4.4.3)
       bs58: 6.0.0
       buffer: 6.0.3
-      ethers: 6.17.0(bufferutil@4.1.0)
+      ethers: 6.17.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     transitivePeerDependencies:
       - bufferutil
       - debug
@@ -3462,9 +3468,9 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@phantom/constants@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)':
+  '@phantom/constants@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)':
     dependencies:
-      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
     transitivePeerDependencies:
       - bufferutil
       - debug
@@ -3478,16 +3484,16 @@ snapshots:
       buffer: 6.0.3
       tweetnacl: 1.0.3
 
-  '@phantom/embedded-provider-core@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)':
+  '@phantom/embedded-provider-core@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)':
     dependencies:
-      '@phantom/api-key-stamper': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
-      '@phantom/auth2': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/api-key-stamper': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
+      '@phantom/auth2': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
       '@phantom/base64url': 2.0.3
-      '@phantom/chain-interfaces': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)
-      '@phantom/client': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
-      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
-      '@phantom/parsers': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)
-      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/chain-interfaces': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)
+      '@phantom/client': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
+      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
+      '@phantom/parsers': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)
+      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
       '@phantom/utils': 2.0.3
       bs58: 6.0.0
       buffer: 6.0.3
@@ -3503,13 +3509,13 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@phantom/indexed-db-stamper@2.0.2(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)':
+  '@phantom/indexed-db-stamper@2.0.2(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)':
     dependencies:
       '@phantom/base64url': 2.0.3
-      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
       '@phantom/crypto': 2.0.3
-      '@phantom/embedded-provider-core': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)
-      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/embedded-provider-core': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)
+      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
       bs58: 6.0.0
       buffer: 6.0.3
     transitivePeerDependencies:
@@ -3529,21 +3535,21 @@ snapshots:
     transitivePeerDependencies:
       - debug
 
-  '@phantom/parsers@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)':
+  '@phantom/parsers@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)':
     dependencies:
       '@phantom/base64url': 2.0.3
-      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
-      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
+      '@phantom/sdk-types': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
       '@phantom/utils': 2.0.3
       '@solana/transactions': 2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)
-      '@solana/web3.js': 1.99.0(bufferutil@4.1.0)(typescript@7.0.2)
+      '@solana/web3.js': 1.99.0(bufferutil@4.1.0)(typescript@7.0.2)(utf-8-validate@6.0.6)
       bs58: 6.0.0
       buffer: 6.0.3
-      ethers: 6.17.0(bufferutil@4.1.0)
+      ethers: 6.17.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     optionalDependencies:
       '@mysten/sui.js': 0.50.1(typescript@7.0.2)
       bitcoinjs-lib: 6.1.8
-      viem: 2.56.9(bufferutil@4.1.0)(typescript@7.0.2)(zod@4.6.5)
+      viem: 2.56.9(bufferutil@4.1.0)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)
     transitivePeerDependencies:
       - '@gql.tada/svelte-support'
       - '@gql.tada/vue-support'
@@ -3555,11 +3561,11 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@phantom/react-sdk@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(react@19.3.0)(typescript@7.0.2)(zod@4.6.5)':
+  '@phantom/react-sdk@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(react@19.3.0)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)':
     dependencies:
-      '@phantom/browser-sdk': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)
-      '@phantom/chain-interfaces': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(zod@4.6.5)
-      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)
+      '@phantom/browser-sdk': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)
+      '@phantom/chain-interfaces': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5)
+      '@phantom/constants': 2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)
       '@phantom/wallet-sdk-ui': 2.0.3(react@19.3.0)
       react: 19.3.0
     transitivePeerDependencies:
@@ -3575,10 +3581,10 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@phantom/sdk-types@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)':
+  '@phantom/sdk-types@2.0.3(bufferutil@4.1.0)(debug@4.4.3)(typescript@7.0.2)(utf-8-validate@6.0.6)':
     dependencies:
       '@phantom/openapi-wallet-service': 0.1.11(debug@4.4.3)
-      '@solana/web3.js': 1.99.0(bufferutil@4.1.0)(typescript@7.0.2)
+      '@solana/web3.js': 1.99.0(bufferutil@4.1.0)(typescript@7.0.2)(utf-8-validate@6.0.6)
       buffer: 6.0.3
     transitivePeerDependencies:
       - bufferutil
@@ -4587,7 +4593,7 @@ snapshots:
     transitivePeerDependencies:
       - fastestsmallesttextencoderdecoder
 
-  '@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@7.0.2)':
+  '@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@7.0.2)(utf-8-validate@6.0.6)':
     dependencies:
       '@babel/runtime': 7.29.7
       '@noble/curves': 1.9.7
@@ -4600,7 +4606,7 @@ snapshots:
       bs58: 4.0.1
       buffer: 6.0.3
       fast-stable-stringify: 1.0.0
-      jayson: 4.3.0(bufferutil@4.1.0)
+      jayson: 4.3.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       node-fetch: 2.7.0
       rpc-websockets: 9.3.9
       superstruct: 2.0.2
@@ -5030,7 +5036,7 @@ snapshots:
     dependencies:
       '@types/estree': 1.0.9
 
-  ethers@6.17.0(bufferutil@4.1.0):
+  ethers@6.17.0(bufferutil@4.1.0)(utf-8-validate@6.0.6):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
       '@noble/curves': 1.2.0
@@ -5038,7 +5044,7 @@ snapshots:
       '@types/node': 22.7.5
       aes-js: 4.0.0-beta.5
       tslib: 2.7.0
-      ws: 8.21.0(bufferutil@4.1.0)
+      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -5145,16 +5151,16 @@ snapshots:
 
   ieee754@1.2.1: {}
 
-  isomorphic-ws@4.0.1(ws@7.5.13(bufferutil@4.1.0)):
+  isomorphic-ws@4.0.1(ws@7.5.13(bufferutil@4.1.0)(utf-8-validate@6.0.6)):
     dependencies:
-      ws: 7.5.13(bufferutil@4.1.0)
+      ws: 7.5.13(bufferutil@4.1.0)(utf-8-validate@6.0.6)
 
-  isows@1.0.7(ws@8.21.0(bufferutil@4.1.0)):
+  isows@1.0.7(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)):
     dependencies:
-      ws: 8.21.0(bufferutil@4.1.0)
+      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     optional: true
 
-  jayson@4.3.0(bufferutil@4.1.0):
+  jayson@4.3.0(bufferutil@4.1.0)(utf-8-validate@6.0.6):
     dependencies:
       '@types/connect': 3.4.38
       '@types/node': 12.20.55
@@ -5163,11 +5169,11 @@ snapshots:
       delay: 5.0.0
       es6-promisify: 5.0.0
       eyes: 0.1.8
-      isomorphic-ws: 4.0.1(ws@7.5.13(bufferutil@4.1.0))
+      isomorphic-ws: 4.0.1(ws@7.5.13(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       json-stringify-safe: 5.0.1
       stream-json: 1.9.1
       uuid: 8.3.2
-      ws: 7.5.13(bufferutil@4.1.0)
+      ws: 7.5.13(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -5545,16 +5551,16 @@ snapshots:
       safe-buffer: 5.2.1
     optional: true
 
-  viem@2.56.9(bufferutil@4.1.0)(typescript@7.0.2)(zod@4.6.5):
+  viem@2.56.9(bufferutil@4.1.0)(typescript@7.0.2)(utf-8-validate@6.0.6)(zod@4.6.5):
     dependencies:
       '@noble/curves': 1.9.1
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
       abitype: 1.2.3(typescript@7.0.2)(zod@4.6.5)
-      isows: 1.0.7(ws@8.21.0(bufferutil@4.1.0))
+      isows: 1.0.7(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       ox: 0.14.45(typescript@7.0.2)(zod@4.6.5)
-      ws: 8.21.0(bufferutil@4.1.0)
+      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     optionalDependencies:
       typescript: 7.0.2
     transitivePeerDependencies:
@@ -5608,13 +5614,15 @@ snapshots:
 
   why-is-node-running@3.2.2: {}
 
-  ws@7.5.13(bufferutil@4.1.0):
+  ws@7.5.13(bufferutil@4.1.0)(utf-8-validate@6.0.6):
     optionalDependencies:
       bufferutil: 4.1.0
+      utf-8-validate: 6.0.6
 
-  ws@8.21.0(bufferutil@4.1.0):
+  ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6):
     optionalDependencies:
       bufferutil: 4.1.0
+      utf-8-validate: 6.0.6
 
   ws@8.22.0(bufferutil@4.1.0)(utf-8-validate@6.0.6):
     optionalDependencies:

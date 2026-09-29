@@ -4,6 +4,7 @@ import { syndromiHome } from "@syndromi/core";
 import { listen } from "./app.js";
 import { createContext } from "./context.js";
 import { Store } from "./db.js";
+import { HostedRuntime } from "./hosted.js";
 import { startSweeper } from "./sweeper.js";
 import { createTelegram } from "./telegram.js";
 
@@ -33,6 +34,16 @@ const ctx = createContext(store, {
 await listen(ctx, port);
 console.log(`syndromi server on http://localhost:${port} (public: ${ctx.config.publicUrl})`);
 startSweeper(ctx);
+
+if ((env.SYNDROMI_HOSTED_SECRET ?? "").length >= 32) {
+  const scheduled = env.SYNDROMI_HOSTED_SCHEDULE !== "off";
+  const hosted = new HostedRuntime(ctx, { schedule: scheduled, log: (line) => console.log(line) });
+  ctx.hosted = hosted;
+  hosted.start();
+  console.log(`Hosted runtime: on${scheduled ? "" : " (schedules off: Run now only)"}.`);
+} else {
+  console.log("Hosted runtime: off (set SYNDROMI_HOSTED_SECRET, 32+ characters).");
+}
 
 if (env.TELEGRAM_BOT_TOKEN) {
   const telegram = await createTelegram(ctx, { token: env.TELEGRAM_BOT_TOKEN });

@@ -212,45 +212,80 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
       cluster?: string;
       manifest?: unknown;
     };
-    const secret = config.env.SYNDROMI_HOSTED_SECRET ?? "";
-    if (secret.length < 32) {
-      return c.json(
-        { error: "hosted agents need SYNDROMI_HOSTED_SECRET (32+ characters) on the server" },
-        500,
-      );
-    }
-    const cluster = clusterParam(body.cluster);
     const template = (await loadTemplates()).find((t) => t.name === body.template);
     if (!template) return c.json({ error: `unknown template ${body.template}` }, 400);
-    const parsed = manifestSchema.safeParse({ ...(body.manifest as object), runtime: "hosted" });
-    if (!parsed.success) {
-      return c.json(
-        { error: parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`) },
-        400,
-      );
-    }
-    const manifest = parsed.data;
-    if (store.agent(manifest.name))
-      return c.json({ error: `an agent named ${manifest.name} exists` }, 409);
-    let mint: Address;
-    try {
-      mint = resolveMint(manifest, cluster);
-    } catch (e) {
-      return c.json({ error: (e as Error).message }, 400);
-    }
-    const keypair = await generateAgentKeypair();
-    store.saveHostedKey(manifest.name, await encryptKeypair(keypair, secret));
-    const record: AgentRecord = {
-      ...registrationFor(manifest, keypair.signer.address, who, cluster, mint),
-      registeredAt: new Date().toISOString(),
-      manifest: manifest as unknown as Record<string, unknown>,
+    const result = await createHostedAgent(ctx, {
+      manifest: body.manifest,
       prompt: template.prompt,
-    };
-    store.upsertAgent(record);
-    return c.json(serialize(publicAgent(record)));
+      owner: who,
+      cluster: clusterParam(body.cluster),
+    });
+    if (!result.ok) return c.json({ error: result.error }, result.status);
+    return c.json(serialize(publicAgent(result.agent)));
+  });
+
+  // Run a hosted agent now (the dashboard's "Run now"); results arrive in the activity feed.
+  owner.post("/agents/:name/run", (c) => {
+    const agent = store.agent(c.req.param("name"));
+    if (!agent || agent.owner !== c.get("owner")) return c.json({ error: "no such agent" }, 404);
+    if (agent.runtime !== "hosted") return c.json({ error: `${agent.name} runs locally` }, 409);
+    if (!ctx.hosted)
+      return c.json({ error: "hosted runtime is off (set SYNDROMI_HOSTED_SECRET)" }, 503);
+    const started = ctx.hosted.runNow(agent.name);
+    return c.json({ started });
   });
 
   app.route("/owner", owner);
+}
+
+/**
+ * Create a hosted agent: validate the manifest, generate its key, store the key encrypted with
+ * SYNDROMI_HOSTED_SECRET. Used by the dashboard wizard and by `syndromi deploy`.
+ */
+export async function createHostedAgent(
+  ctx: ServerContext,
+  args: { manifest: unknown; prompt: string; owner: Address; cluster: Cluster },
+): Promise<
+  | { ok: true; agent: AgentRecord }
+  | { ok: false; status: 400 | 409 | 500; error: string | string[] }
+> {
+  const secret = ctx.config.env.SYNDROMI_HOSTED_SECRET ?? "";
+  if (secret.length < 32) {
+    return {
+      ok: false,
+      status: 500,
+      error: "hosted agents need SYNDROMI_HOSTED_SECRET (32+ characters) on the server",
+    };
+  }
+  const parsed = manifestSchema.safeParse({ ...(args.manifest as object), runtime: "hosted" });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      status: 400,
+      error: parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`),
+    };
+  }
+  const manifest = parsed.data;
+  if (ctx.store.agent(manifest.name)) {
+    return { ok: false, status: 409, error: `an agent named ${manifest.name} exists` };
+  }
+  let mint: Address;
+  try {
+    mint = resolveMint(manifest, args.cluster);
+  } catch (e) {
+    return { ok: false, status: 400, error: (e as Error).message };
+  }
+  const keypair = await generateAgentKeypair();
+  ctx.store.saveHostedKey(manifest.name, await encryptKeypair(keypair, secret));
+  const agent: AgentRecord = {
+    ...registrationFor(manifest, keypair.signer.address, args.owner, args.cluster, mint),
+    registeredAt: new Date().toISOString(),
+    manifest: manifest as unknown as Record<string, unknown>,
+    prompt: args.prompt,
+  };
+  ctx.store.upsertAgent(agent);
+  ctx.hosted?.scan();
+  return { ok: true, agent };
 }
 
 function clusterParam(value: string | undefined): Cluster {

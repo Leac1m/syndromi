@@ -174,5 +174,67 @@ describe("owner-scoped data", () => {
         owner: alice.address,
       }),
     ).toThrow(/different owner/);
+    // Bob's agent cannot be run by Alice either.
+    expect((await req("/owner/agents/bobs-agent/run", { token, body: {} })).status).toBe(404);
+  });
+});
+
+describe("hosted agents: deploy and run now", () => {
+  const scout = async (token: string) => {
+    const templates = (await (await req("/owner/templates", { token })).json()) as {
+      name: string;
+      manifest: Record<string, unknown>;
+      prompt: string;
+    }[];
+    const t = templates.find((x) => x.name === "yield-scout");
+    if (!t) throw new Error("no yield-scout template");
+    return t;
+  };
+
+  it("deploys through the runtime API only with the server token", async () => {
+    const { res } = await signInAs(alice);
+    const { token } = (await res.json()) as { token: string };
+    const t = await scout(token);
+    const body = {
+      manifest: { ...t.manifest, name: "scout-deployed" },
+      prompt: t.prompt,
+      owner: alice.address,
+      cluster: "fork",
+    };
+    const api = (auth?: string, b: unknown = body) =>
+      app.request("/api/deploy", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(auth ? { authorization: `Bearer ${auth}` } : {}),
+        },
+        body: JSON.stringify(b),
+      });
+    expect((await api()).status).toBe(401);
+    expect((await api("t", { ...body, owner: "nope" })).status).toBe(400);
+    const ok = await api("t");
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toMatchObject({ name: "scout-deployed", cluster: "fork" });
+    expect(ctx.store.agent("scout-deployed")).toMatchObject({
+      runtime: "hosted",
+      owner: alice.address,
+    });
+    expect((await api("t")).status).toBe(409); // the name is taken
+  });
+
+  it("runs only the owner's hosted agents, and says when the hosted runtime is off", async () => {
+    const { res } = await signInAs(alice);
+    const { token } = (await res.json()) as { token: string };
+    const t = await scout(token);
+    await req("/owner/agents", {
+      token,
+      body: { template: "yield-scout", cluster: "devnet", manifest: t.manifest },
+    });
+    expect((await req("/owner/agents/yield-scout/run", { token, body: {} })).status).toBe(503);
+    const runs: string[] = [];
+    ctx.hosted = { scan: () => undefined, runNow: (name) => (runs.push(name), true) };
+    const run = await req("/owner/agents/yield-scout/run", { token, body: {} });
+    expect(await run.json()).toEqual({ started: true });
+    expect(runs).toEqual(["yield-scout"]);
   });
 });

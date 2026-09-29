@@ -65,6 +65,11 @@ export class ServerClient {
     return this.call<{ ok: true }>("/api/agents", agent);
   }
 
+  /** Hand a manifest and prompt to the server, which creates and runs the agent (hosted). */
+  deploy(args: { manifest: unknown; prompt: string; owner: Address; cluster: Cluster }) {
+    return this.call<{ name: string; address: Address; cluster: Cluster }>("/api/deploy", args);
+  }
+
   submitDraft(agentName: string, draft: Omit<Draft, "id" | "createdAt" | "status">) {
     return this.call<{ id: string; createdAt: string }>("/api/drafts", { agentName, ...draft });
   }

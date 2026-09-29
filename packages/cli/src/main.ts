@@ -4,6 +4,7 @@ import { parseArgs } from "node:util";
 import { redact } from "@syndromi/core";
 import { action } from "./commands/action.js";
 import { approve } from "./commands/approve.js";
+import { deploy } from "./commands/deploy.js";
 import { fund } from "./commands/fund.js";
 import { init } from "./commands/init.js";
 import { requestTopUp } from "./commands/request-topup.js";
@@ -24,6 +25,9 @@ const HELP = `syndromi <command>
                                           run now (--once) or on the schedule; with a server,
                                           drafts go to Telegram and approvals are executed
   watch <dir> [--once] [--server <url>]   execute owner approvals only (no LLM)
+  deploy <dir> [--owner <address>] [--server <url>]
+                                          run the agent hosted: the server creates its key and
+                                          runs it on the manifest schedule
   approve <id> [--reject] [--server <url>]   owner: approve or reject from the terminal
   action <path> [--server <url>]          owner: run a server Action with the CLI key, e.g.
                                           /actions/fund-agent/<name>, "/actions/kill-switch?cluster=devnet"
@@ -119,6 +123,17 @@ export async function main(argv: string[], io: Io = terminalIo, env: Env = proce
       return action(
         needTarget(),
         { cluster, ...(values.server ? { server: values.server } : {}) },
+        io,
+        env,
+      );
+    case "deploy":
+      return deploy(
+        needTarget(),
+        {
+          cluster,
+          ...(values.owner ? { owner: values.owner } : {}),
+          ...(values.server ? { server: values.server } : {}),
+        },
         io,
         env,
       );

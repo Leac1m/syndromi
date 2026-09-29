@@ -23,6 +23,12 @@ export type AgentRecord = {
   prompt?: string;
 };
 
+/** An activity event as stored: the runtime's fields plus its sequence number and agent. */
+export type ActivityRow = { seq: number; agentName: string; type?: string } & Record<
+  string,
+  unknown
+>;
+
 export type DraftStatus =
   | "pending"
   | "approved"
@@ -288,11 +294,13 @@ export class Store {
         `select seq, agent_name, data from activity where ${where} order by seq ${order} limit ?`,
       )
       .all(...params) as { seq: number; agent_name: string; data: string }[];
-    return rows.map((r) => ({
-      seq: r.seq,
-      agentName: r.agent_name,
-      ...(JSON.parse(r.data) as Record<string, unknown>),
-    }));
+    return rows.map(
+      (r): ActivityRow => ({
+        ...(JSON.parse(r.data) as Record<string, unknown>),
+        seq: r.seq,
+        agentName: r.agent_name,
+      }),
+    );
   }
 
   // ------------------------------------------------------------------ signing nonces

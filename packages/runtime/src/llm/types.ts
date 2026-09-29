@@ -48,14 +48,21 @@ export async function postJson(
       signal: AbortSignal.timeout(120_000),
     });
     if (res.ok) return res.json();
-    const retryable = res.status === 429 || res.status >= 500;
+    const text = await res.text().catch(() => "");
+    // A daily quota (e.g. Gemini's free tier, 20 requests/day/model) will not recover in seconds.
+    const daily = res.status === 429 && /PerDay/.test(text);
+    const retryable = !daily && (res.status === 429 || res.status >= 500);
     if (retryable && attempt < ATTEMPTS) {
       const retryAfter = Number(res.headers?.get("retry-after"));
       const delay = retryAfter > 0 ? retryAfter * 1000 : 2 ** attempt * 1000;
       await new Promise((r) => setTimeout(r, Math.min(delay, 20_000)));
       continue;
     }
-    const text = await res.text().catch(() => "");
+    if (daily) {
+      throw new Error(
+        `${label}: daily request quota exhausted; try another model (run --model <id>)`,
+      );
+    }
     throw new Error(`${label} HTTP ${res.status}: ${text.slice(0, 300)}`);
   }
 }

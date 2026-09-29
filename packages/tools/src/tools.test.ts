@@ -98,6 +98,36 @@ suite("jupiter-swap", () => {
     expect((await evaluate(out.proposal, policy, ctx.prices)).verdict).toBe("allow");
   });
 
+  it("asks Jupiter for a simpler route when the first one does not fit in a transaction", async () => {
+    const many = await Promise.all(
+      Array.from({ length: 40 }, async () => (await generateKeyPairSigner()).address),
+    );
+    const oversized = {
+      ...buildResponse,
+      swapInstruction: {
+        programId: JUPITER_PROGRAM_ADDRESS,
+        accounts: many.map((pubkey) => ({ pubkey, isSigner: false, isWritable: true })),
+        data: "",
+      },
+    };
+    const fetch = vi.fn((url: string | URL | Request, _init?: RequestInit) =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve(String(url).includes("maxAccounts") ? buildResponse : oversized),
+      } as Response),
+    );
+    const ctx = await fakeContext({ jupiter: { fetch } });
+    const out = await createToolset(["jupiter-swap"]).call(
+      "jupiter-swap",
+      { from: "USDC", to: "SOL", amount: 3 },
+      ctx,
+    );
+    expect(out.type).toBe("proposal");
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(String(fetch.mock.calls[1]?.[0])).toContain("maxAccounts=48");
+  });
+
   it("is unavailable on devnet", async () => {
     const ctx = await fakeContext({ cluster: "devnet", network: "devnet" });
     const out = await createToolset(["jupiter-swap"]).call(

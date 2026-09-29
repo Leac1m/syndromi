@@ -14,7 +14,7 @@ const HELP = `syndromi <command>
 
   init <template|dir> [--dir <path>]   copy a template and create the agent's encrypted key
   fund <dir>                           owner: send the fee budget and grant the allowance
-  run <dir> [--once] [--max-steps n]   run the agent now (--once) or on its schedule
+  run <dir> [--once] [--max-steps n] [--model id]   run now (--once) or on the manifest schedule
   status                               list the bag's delegations and what is left
   revoke --all | --agent <name> [--hard]   kill switch: revoke delegations
 
@@ -29,6 +29,7 @@ export async function main(argv: string[], io: Io = terminalIo, env: Env = proce
       dir: { type: "string" },
       once: { type: "boolean" },
       "max-steps": { type: "string" },
+      model: { type: "string" },
       fork: { type: "boolean" },
       mainnet: { type: "boolean" },
       all: { type: "boolean" },
@@ -52,7 +53,12 @@ export async function main(argv: string[], io: Io = terminalIo, env: Env = proce
       const maxSteps = values["max-steps"] ? Number(values["max-steps"]) : undefined;
       return run(
         needTarget(),
-        { cluster, once: Boolean(values.once), ...(maxSteps ? { maxSteps } : {}) },
+        {
+          cluster,
+          once: Boolean(values.once),
+          ...(maxSteps ? { maxSteps } : {}),
+          ...(values.model ? { model: values.model } : {}),
+        },
         io,
         env,
       );

@@ -102,6 +102,20 @@ describe("FallbackPriceSource", () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[0]).toContain("HTTP 401");
   });
+
+  it("treats a 403 as a feed missing from the plan, warning once per feed", async () => {
+    const warn = vi.fn();
+    const pyth = new PythPriceSource({
+      apiKey: "k",
+      fetch: () => Promise.resolve({ ok: false, status: 403 } as Response),
+      warn,
+      now: () => 0,
+    });
+    expect(await pyth.usdPrice(usdcMainnet)).toBeUndefined();
+    expect(await pyth.usdPrice(usdcMainnet)).toBeUndefined(); // cached, no second warning
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/not entitled to the USDC feed/);
+  });
 });
 
 describe("createPriceSource", () => {

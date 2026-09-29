@@ -4,7 +4,9 @@ import {
   appendTransactionMessageInstructions,
   compressTransactionMessageUsingAddressLookupTables,
   createTransactionMessage,
+  getTransactionMessageSize,
   type Instruction,
+  isTransactionMessageWithinSizeLimit,
   pipe,
   prependTransactionMessageInstruction,
   setTransactionMessageFeePayer,
@@ -18,6 +20,14 @@ import type { ProposalMessage } from "@syndromi/core";
 import type { ToolContext } from "./tool.js";
 
 const MAX_UNITS = 1_400_000;
+
+/** The message would not fit in a transaction (1232 bytes); callers may retry smaller. */
+export class TransactionTooLargeError extends Error {
+  constructor(readonly size: number) {
+    super(`transaction too large: ${size} bytes (max 1232)`);
+    this.name = "TransactionTooLargeError";
+  }
+}
 /** Used when simulation fails; the proposal is still evaluated by the policy but never sent. */
 const FALLBACK_UNITS = 400_000;
 
@@ -34,6 +44,13 @@ export async function buildMessage(
     (m) => appendTransactionMessageInstructions(instructions, m),
     (m) => compressTransactionMessageUsingAddressLookupTables(m, lookupTables),
   );
+  const withLimit = prependTransactionMessageInstruction(
+    getSetComputeUnitLimitInstruction({ units: MAX_UNITS }),
+    unsized,
+  );
+  if (!isTransactionMessageWithinSizeLimit(withLimit)) {
+    throw new TransactionTooLargeError(getTransactionMessageSize(withLimit));
+  }
   let units = FALLBACK_UNITS;
   let simulationError: string | undefined;
   try {

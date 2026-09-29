@@ -17,11 +17,14 @@ import { CliError, type Io } from "../io.js";
 /** `syndromi run <dir> [--once]`: run the agent now, or on its manifest schedule. */
 export async function run(
   dir: string,
-  opts: { cluster: Cluster; once: boolean; maxSteps?: number },
+  opts: { cluster: Cluster; once: boolean; maxSteps?: number; model?: string },
   io: Io,
   env: Env,
 ) {
-  const { manifest, prompt } = await loadAgentDir(dir);
+  const loaded = await loadAgentDir(dir);
+  const { prompt } = loaded;
+  // --model swaps the model id for this run only (e.g. when a free-tier quota runs out).
+  const manifest = opts.model ? { ...loaded.manifest, model_id: opts.model } : loaded.manifest;
   const config = await readAgentConfig(manifest.name, env);
   if (!config.owner)
     throw new CliError(`agent "${manifest.name}" has no allowance yet; run: syndromi fund ${dir}`);

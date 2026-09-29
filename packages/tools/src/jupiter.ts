@@ -38,6 +38,8 @@ export type BuildParams = {
   slippageBps: number;
   /** Comma-separated DEX labels to route through; omit for Jupiter's default routing. */
   dexes?: string;
+  /** Cap on accounts in the route (1-64, default 64); lower means simpler, smaller routes. */
+  maxAccounts?: number;
 };
 
 /**
@@ -60,6 +62,7 @@ export async function fetchBuild(
     slippageBps: String(p.slippageBps),
   });
   if (p.dexes) params.set("dexes", p.dexes);
+  if (p.maxAccounts) params.set("maxAccounts", String(p.maxAccounts));
   const headers: Record<string, string> = {};
   if (opts.apiKey) headers["x-api-key"] = opts.apiKey;
   const res = await (opts.fetch ?? fetch)(`${JUPITER_BUILD}?${params}`, { headers });

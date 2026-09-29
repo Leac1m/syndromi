@@ -61,7 +61,19 @@ export class PythPriceSource implements PriceSource {
       warn?: (message: string) => void;
     },
   ) {}
-  private warned = false;
+  private warned = new Set<string>();
+
+  /** 401: the key was rejected (the trial lapses after 14 days). 403: the plan lacks this feed. */
+  private warnOnce(status: number, symbol: string) {
+    const key = status === 401 ? "key" : status === 403 ? `feed:${symbol}` : undefined;
+    if (!key || this.warned.has(key)) return;
+    this.warned.add(key);
+    (this.opts.warn ?? console.warn)(
+      status === 401
+        ? "Pyth rejected PYTH_API_KEY (HTTP 401); the key may have expired. Prices fall back to Jupiter."
+        : `Pyth: this key is not entitled to the ${symbol} feed (HTTP 403); using Jupiter for ${symbol}.`,
+    );
+  }
 
   async usdPrice(mint: Address): Promise<number | undefined> {
     const token: TokenInfo | undefined = tokenByMint(mint);
@@ -78,12 +90,7 @@ export class PythPriceSource implements PriceSource {
         `${base}/v2/updates/price/latest?ids[]=0x${feed}&parsed=true`,
         { headers: { Authorization: `Bearer ${this.opts.apiKey}` } },
       );
-      if ((res.status === 401 || res.status === 403) && !this.warned) {
-        this.warned = true;
-        (this.opts.warn ?? console.warn)(
-          `Pyth rejected PYTH_API_KEY (HTTP ${res.status}); the key may have expired. Prices fall back to Jupiter.`,
-        );
-      }
+      this.warnOnce(res.status, token.symbol);
       if (res.ok) {
         const body = (await res.json()) as {
           parsed?: { price: { price: string; expo: number; publish_time: number } }[];

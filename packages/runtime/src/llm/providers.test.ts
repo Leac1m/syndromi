@@ -83,6 +83,21 @@ describe("openai-compatible provider", () => {
     expect(calls).toBe(2);
   });
 
+  it("fails fast on an exhausted daily quota instead of retrying", async () => {
+    const fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: false,
+        status: 429,
+        headers: new Headers(),
+        text: () =>
+          Promise.resolve('{"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}'),
+      } as Response),
+    );
+    const convo = createProvider(manifest, { GEMINI_API_KEY: "k" }, fetch).start("s", []);
+    await expect(convo.send({ user: "go" })).rejects.toThrow(/daily request quota exhausted/);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("names the missing key variable instead of calling out", () => {
     expect(() => createProvider(manifest, {})).toThrow(/GEMINI_API_KEY is not set/);
   });

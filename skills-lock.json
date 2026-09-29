@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "colosseum-resources": {
+      "source": "ColosseumOrg/colosseum-resources",
+      "sourceType": "github",
+      "skillPath": "skills/colosseum-resources/SKILL.md",
+      "computedHash": "ab84c86c14e8bb8824e6dcf57e21ee54b56fcda9f48575518fa1df00464f827f"
+    }
+  }
+}

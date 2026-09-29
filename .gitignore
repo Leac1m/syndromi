@@ -1,0 +1,39 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+coverage/
+.turbo/
+
+# secrets: never commit keys, env files, or keypairs
+.env
+.env.*
+!.env.example
+*.pem
+*keypair*.json
+id.json
+keys/
+wallets/
+.syndromi/
+
+# local chain / data
+test-ledger/
+.surfpool/
+*.sqlite
+*.sqlite-journal
+*.db
+
+# logs and OS/editor noise
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

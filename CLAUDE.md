@@ -1,0 +1,121 @@
+# syndromí: project context for Claude Code
+
+> Budgets, permissions, and approvals for onchain AI agents on Solana.
+> Submission for the Colosseum Crypto World's Fair (Solana track). Deadline: Oct 12, 2026, 11:59pm PT.
+> Development window: 7 days (Sep 29 – Oct 5). Oct 6–12 is buffer, videos, and submission.
+
+## What we're building
+
+One owner wallet (the **bag**) funds many AI agents. Each agent gets an **allowance** (amount per period) enforced onchain by the Solana Foundation's Subscriptions & Allowances program. Agents pull their allowance into their own wallet, and every transaction they sign passes a **policy layer** (program allowlist, destination allowlist, per-tx cap, approval threshold). Anything above threshold becomes a **draft** that the owner approves by signing a Blink sent to Telegram or shown in the dashboard.
+
+Agents are defined by a portable **manifest** and run identically **locally** (free, via CLI) or **hosted** (paid tier, same runtime as a service).
+
+### Pitch line
+The Foundation gave Solana allowances. syndromí turns them into safe, governable budgets for fleets of AI agents.
+
+### The demo we must be able to record (everything serves this)
+1. Owner connects Phantom and funds the bag with devnet USDC.
+2. Owner creates two agents: `dca-agent` (runs locally via CLI) and `yield-scout` (runs hosted).
+3. `yield-scout` finds a better yield (e.g. USDC → liquid staking token via Jupiter), sends a draft to Telegram as a Blink; owner signs; it executes.
+4. An agent hits its limit and requests a top-up; owner approves (one-time fixed allowance).
+5. A prompt-injection fixture tells an agent to send funds to an unknown address; the policy layer blocks it and the activity feed shows BLOCKED.
+6. Owner hits the kill switch; all delegations are revoked.
+
+## Architecture decisions (locked unless a Day-1 spike disproves them)
+
+- **No custom onchain program.** Build on the Subscriptions Delegation Program.
+  - Program ID (verify against `program/src/lib.rs` in the repo before use): `De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44`
+  - Live on mainnet and devnet. Surfpool local workflows install it at the canonical address.
+  - Recurring delegation → the agent's regular allowance (amount per period).
+  - Fixed delegation (one-time cap, optional expiry) → approved top-up requests.
+  - Revoking delegations → kill switch.
+  - Rejects mints with certain Token-2022 extensions (ConfidentialTransfer, NonTransferable, PermanentDelegate, TransferHook, TransferFee, MintCloseAuthority, Pausable). Use plain USDC / SPL test mints.
+- **Bag** = the owner's USDC token account (recommend a dedicated Phantom account). The program's per-(user, mint) Subscription Authority PDA gates every pull.
+- **Agent wallet** = a keypair per agent. Local: encrypted keypair file under `~/.syndromi/`. Hosted: server-held keypair from env/secret store for the hackathon (managed MPC/TEE custody is roadmap).
+- **Fee budget** = small SOL transfer from owner to agent wallet at creation (covers tx fees and token-account rent).
+- **Policy layer** = a signer wrapper in `packages/core`. Nothing signs without passing it. Swig smart-wallet permissions are a timeboxed Day-1 spike; if they fit in 2 hours, use them to enforce outflow rules onchain, otherwise keep the offchain signer policy and list Swig as roadmap.
+- **Network**: devnet by default. Jupiter is mainnet-only, so swaps are tested against a Surfpool mainnet fork (verify on Day 1) and the final demo does one real mainnet run with a few dollars.
+
+## Stack
+
+- TypeScript everywhere, pnpm workspaces monorepo, Node 20+.
+- `@solana/kit` as the Solana client. `@solana/subscriptions` for the delegation program.
+- `@solana/actions` (depends on web3.js v1) isolated inside `apps/server` only. Do not leak web3.js v1 types into `packages/core`.
+- LLM: provider-agnostic interface. Implement Anthropic (BYOK) and one OpenAI-compatible endpoint (for open models).
+- Tools follow an MCP-compatible shape (`name`, `description`, `inputSchema`) plus a permission manifest: `kind: "read" | "write"`. Only `write` tools may produce transactions, and they only return **unsigned** transactions to the policy signer.
+- Prices: Pyth Hermes client (offchain reads). Swaps: Jupiter Swap API.
+- Server: Fastify or Hono. Persistence: SQLite (better-sqlite3 or drizzle).
+- Dashboard: Next.js + Phantom Connect.
+- Telegram: grammY.
+- Tests: Vitest; LiteSVM or Surfpool for transaction-level tests.
+
+## Repo layout
+
+```
+apps/
+  dashboard/     Next.js: bag, agent wizard, rule card, activity feed, kill switch
+  server/        approvals API, Solana Actions/Blinks endpoints, Telegram bot, hosted runtime host
+packages/
+  core/          bag client, delegation helpers, agent wallet, policy signer, manifest schema (zod)
+  runtime/       agent loop, LLM providers, tool registry, scheduler
+  tools/         first-party tools: pyth-price, jupiter-quote, jupiter-swap, balances,
+                 pull-allowance, request-topup, propose-tx
+  cli/           `syndromi init | run | deploy | revoke`
+templates/
+  dca-agent/     manifest + prompt
+  yield-scout/   manifest + prompt
+fixtures/
+  injection/     malicious tool output used in the security demo
+docs/
+  manifest-spec.md, package-spec.md, architecture.md
+scripts/
+  spike-*.ts     Day-1 spikes
+```
+
+## Agent manifest (target shape)
+
+```yaml
+name: yield-scout
+runtime: hosted            # or local
+model: byok:anthropic      # or openai-compatible:<url>
+schedule: "*/15 * * * *"
+allowance: { mint: USDC, amount: 50, period: weekly }
+fee_budget: { sol: 0.02 }
+permissions:
+  programs: [jupiter]
+  destinations: [self]
+  max_tx_usd: 25
+  approve_above_usd: 10
+tools: [pyth-price, jupiter-quote, jupiter-swap, balances, pull-allowance, request-topup]
+prompt: ./prompt.md
+```
+
+## Rules for Claude Code in this repo
+
+1. **Check the docs before writing integration code.** These SDKs changed during 2026. Use the Solana MCP server and the doc links below; do not rely on memory for package APIs, program IDs, or instruction layouts.
+2. Never invent program IDs, mint addresses, or API endpoints. If unsure, stop and ask.
+3. Never commit keys, `.env`, or keypair files. `.gitignore` them on day one.
+4. Devnet by default. Any mainnet action requires an explicit `--mainnet` flag and a confirmation prompt.
+5. LLM output never reaches a signer directly. Flow is always: tool builds unsigned tx → policy check → (approval if needed) → sign → send.
+6. Keep each day's work shippable. Commit after each task with a clear message. Prefer working and simple over complete.
+7. When a task in `PLAN.md` is done, tick it and note anything deferred.
+
+## Docs
+
+- Subscriptions overview: https://solana.com/docs/payments/subscriptions/overview
+- Subscription plan guide (install line, PDAs): https://solana.com/docs/payments/subscriptions/subscription-plan
+- Subscriptions explainer (Chainstack): https://docs.chainstack.com/docs/solana-subscriptions-and-allowances
+- Helius integration write-up: https://www.helius.dev/blog/solana-subscriptions-recurring-payments
+- Solana payments map (incl. x402): https://solana.com/docs/payments
+- Kit (TS client): https://solana.com/docs/clients/official/javascript
+- Solana Actions & Blinks: https://solana.com/docs/tools/actions
+- Dialect Blinks docs: https://docs.dialect.to/blinks
+- Swig docs: https://build.onswig.com/ · TS tutorial: https://build.onswig.com/tutorials/typescript
+- Phantom Connect: https://docs.phantom.com/phantom-connect
+- Jupiter docs index (LLM-friendly): https://dev.jup.ag/docs/llms.txt
+- Pyth on Solana: https://docs.pyth.network/price-feeds/use-real-time-data/solana
+- Surfpool: https://solana.com/docs/tools/surfpool · LiteSVM: https://solana.com/docs/tools/litesvm
+- x402 on Solana: https://solana.com/docs/payments/agentic-payments/intro-to-x402
+- Solana MCP (docs retrieval for coding agents): https://mcp.solana.com/
+- Solana Agent Skills: https://solana.com/skills
+- Hackathon resources: https://colosseum.com/worldsfair/resources

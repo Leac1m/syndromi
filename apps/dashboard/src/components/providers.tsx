@@ -65,7 +65,10 @@ function AppProvider({ children }: { children: ReactNode }) {
   const { disconnect } = useDisconnect();
   const { solana } = useSolana();
   const [network, setNetwork] = useState<Network>("devnet");
-  const [session, setSession] = useState(currentSession());
+  // Read the stored session after mount: the server render has no storage, and reading it during
+  // the first render made the client's HTML differ (a hydration mismatch).
+  const [session, setSession] = useState<ReturnType<typeof currentSession>>();
+  useEffect(() => setSession(currentSession()), []);
   const [error, setError] = useState<string>();
   const wallet = addresses.find((a) => a.addressType === AddressType.solana)?.address;
 

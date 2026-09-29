@@ -3,7 +3,6 @@ packages:
   - packages/*
   - scripts
 allowBuilds:
+  bufferutil: false
   esbuild: true
-minimumReleaseAgeExclude:
-  - '@hono/node-server@2.1.3'
-  - hono@4.13.11
+  utf-8-validate: false

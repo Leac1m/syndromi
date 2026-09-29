@@ -129,6 +129,10 @@ async function refreshForkPools(response: BuildResponse, ctx: ToolContext) {
     });
     keep.add(ata);
   }
+  // Fresh pool state carries mainnet timestamps; a lagging fork clock then trips checks such as
+  // Whirlpool's InvalidTimestamp (6022). Move the fork clock to now first (it only moves forward;
+  // a rejected "past" target just means the clock is already ahead).
+  await surfnet("surfnet_timeTravel", [{ absoluteTimestamp: Date.now() }]);
   const accounts = [
     ...response.setupInstructions,
     response.swapInstruction,
@@ -141,20 +145,16 @@ async function refreshForkPools(response: BuildResponse, ctx: ToolContext) {
         .map((a) => a.pubkey),
     ),
   ];
-  await Promise.all(
-    stale.map((pubkey) =>
-      fetch(SURFPOOL_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "surfnet_resetAccount",
-          params: [pubkey],
-        }),
-      }).catch(() => undefined),
-    ),
-  );
+  await Promise.all(stale.map((pubkey) => surfnet("surfnet_resetAccount", [pubkey])));
+}
+
+/** A Surfpool cheatcode call; failures are ignored (the swap's simulation reports real problems). */
+async function surfnet(method: string, params: unknown[]) {
+  await fetch(SURFPOOL_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  }).catch(() => undefined);
 }
 
 /** undefined = Jupiter's default (64). */

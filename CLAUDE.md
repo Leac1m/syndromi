@@ -29,17 +29,17 @@ The Foundation gave Solana allowances. syndromí turns them into safe, governabl
   - Recurring delegation → the agent's regular allowance (amount per period).
   - Fixed delegation (one-time cap, optional expiry) → approved top-up requests.
   - Revoking delegations → kill switch.
-  - Rejects mints with certain Token-2022 extensions (ConfidentialTransfer, NonTransferable, PermanentDelegate, TransferHook, TransferFee, MintCloseAuthority, Pausable). Use plain USDC / SPL test mints.
+  - Rejects mints with certain Token-2022 extensions (ConfidentialTransfer, NonTransferable, PermanentDelegate, TransferFee, MintCloseAuthority, Pausable). The docs now say TransferHook is supported, but SDK 0.5.0 still defines `MINT_HAS_TRANSFER_HOOK`. Use plain USDC / SPL test mints.
 - **Bag** = the owner's USDC token account (recommend a dedicated Phantom account). The program's per-(user, mint) Subscription Authority PDA gates every pull.
 - **Agent wallet** = a keypair per agent. Local: encrypted keypair file under `~/.syndromi/`. Hosted: server-held keypair from env/secret store for the hackathon (managed MPC/TEE custody is roadmap).
 - **Fee budget** = small SOL transfer from owner to agent wallet at creation (covers tx fees and token-account rent).
-- **Policy layer** = a signer wrapper in `packages/core`. Nothing signs without passing it. Swig smart-wallet permissions are a timeboxed Day-1 spike; if they fit in 2 hours, use them to enforce outflow rules onchain, otherwise keep the offchain signer policy and list Swig as roadmap.
+- **Policy layer** = a signer wrapper in `packages/core`. Nothing signs without passing it. Swig smart-wallet permissions passed the Day-1 spike (see `docs/architecture.md`). They are a first stretch item layered on top of the offchain signer, never a replacement for it.
 - **Network**: devnet by default. Jupiter is mainnet-only, so swaps are tested against a Surfpool mainnet fork (verify on Day 1) and the final demo does one real mainnet run with a few dollars.
 
 ## Stack
 
 - TypeScript everywhere, pnpm workspaces monorepo, Node 20+.
-- `@solana/kit` as the Solana client. `@solana/subscriptions` for the delegation program.
+- `@solana/kit` as the Solana client. `@solana/subscriptions` for the delegation program. Pin the **kit 7** line (subscriptions 0.5 peers on kit ^7); see `docs/architecture.md`.
 - `@solana/actions` (depends on web3.js v1) isolated inside `apps/server` only. Do not leak web3.js v1 types into `packages/core`.
 - LLM: provider-agnostic interface. Implement Anthropic (BYOK) and one OpenAI-compatible endpoint (for open models).
 - Tools follow an MCP-compatible shape (`name`, `description`, `inputSchema`) plus a permission manifest: `kind: "read" | "write"`. Only `write` tools may produce transactions, and they only return **unsigned** transactions to the policy signer.

@@ -23,10 +23,10 @@ Each day has a goal, tasks, a "done when" check, and a kickoff prompt to paste i
 
 **Goal:** prove the three risky assumptions before building on them.
 
-- [ ] Scaffold the pnpm monorepo per `CLAUDE.md` (empty packages, shared tsconfig, Vitest, lint, `.gitignore` with keys/.env).
-- [ ] `scripts/spike-delegation.ts`: on devnet, owner creates a **recurring delegation** to an agent pubkey; agent pulls within the limit; a pull over the limit fails; owner **revokes**; next pull fails. Also create a **fixed delegation** and pull against it.
-- [ ] `scripts/spike-jupiter.ts`: get a Jupiter quote and swap tx for USDC → SOL, and execute it against a **Surfpool mainnet fork**. If that doesn't work, fall back to: build + simulate only in dev, one real mainnet swap for the video.
-- [ ] Swig spike, **timeboxed to 2 hours**: can an agent wallet be restricted to Jupiter + self-transfers onchain? Record the decision in `docs/architecture.md`.
+- [x] Scaffold the pnpm monorepo per `CLAUDE.md` (empty packages, shared tsconfig, Vitest, lint, `.gitignore` with keys/.env). _(Biome for lint/format; Solana deps pinned to kit 7.)_
+- [x] `scripts/spike-delegation.ts`: on devnet, owner creates a **recurring delegation** to an agent pubkey; agent pulls within the limit; a pull over the limit fails; owner **revokes**; next pull fails. Also create a **fixed delegation** and pull against it. _(16/16 on devnet incl. period reset.)_
+- [x] `scripts/spike-jupiter.ts`: get a Jupiter quote and swap tx for USDC → SOL, and execute it against a **Surfpool mainnet fork**. If that doesn't work, fall back to: build + simulate only in dev, one real mainnet swap for the video. _(Works on the fork via `/swap/v2/build`, keyless; the fork needs classic-AMM routing (`dexes`), and about 1 in 5 fork swaps fail intermittently. The `--simulate-mainnet` fallback wasn't needed, so it wasn't built.)_
+- [x] Swig spike, **timeboxed to 2 hours**: can an agent wallet be restricted to Jupiter + self-transfers onchain? Record the decision in `docs/architecture.md`. _(Works onchain for amount caps and a Jupiter-only program allowlist; "self-only" can't apply to swaps. Recommendation: offchain policy signer stays primary; Swig is the first stretch item.)_
 
 **Done when:** all three spike scripts run, and `docs/architecture.md` records the decisions.
 

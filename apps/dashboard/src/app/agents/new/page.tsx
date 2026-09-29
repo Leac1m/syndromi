@@ -203,7 +203,7 @@ export default function NewAgent() {
 
 function LocalSetup({ name, template }: { name: string; template: string }) {
   const app = useApp();
-  const command = `pnpm syndromi init templates/${template} --server ${SERVER} --owner ${app.owner ?? "<your address>"}${app.network === "mainnet" ? " --mainnet" : ""}`;
+  const command = `pnpm syndromi init templates/${template} --server ${SERVER} --owner ${app.owner ?? "<your address>"}${app.network === "mainnet" ? " --mainnet" : app.network === "fork" ? " --fork" : ""}`;
   const { data } = usePoll(() => api.overview(app.network), 3000, [app.network]);
   const registered = useMemo(() => data?.agents.find((a) => a.name === name), [data, name]);
   if (registered) {

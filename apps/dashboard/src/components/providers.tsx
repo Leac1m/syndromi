@@ -127,11 +127,13 @@ function AppProvider({ children }: { children: ReactNode }) {
           account: session.owner,
           signMessage,
           async signTransaction(transaction: Transaction) {
-            await solana.switchNetwork(network).catch(() => undefined);
+            // The fork mirrors mainnet; wallets cannot reach it, but they only sign here.
+            const walletNet = network === "devnet" ? "devnet" : "mainnet";
+            await solana.switchNetwork(walletNet).catch(() => undefined);
             const wire = new Uint8Array(
               getBase64Encoder().encode(getBase64EncodedWireTransaction(transaction)),
             );
-            return signTransactionBytes(session.owner, wire, `solana:${network}`);
+            return signTransactionBytes(session.owner, wire, `solana:${walletNet}`);
           },
         };
       },

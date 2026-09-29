@@ -13,7 +13,7 @@ export function Shell({ children }: { children: ReactNode }) {
           syndromí
         </Link>
         <div className="flex overflow-hidden rounded-lg border border-line text-sm">
-          {(["devnet", "mainnet"] as const).map((n) => (
+          {(["devnet", "fork", "mainnet"] as const).map((n) => (
             <button
               key={n}
               type="button"
@@ -43,6 +43,12 @@ export function Shell({ children }: { children: ReactNode }) {
           </button>
         )}
       </header>
+      {app.network === "fork" && (
+        <div className="mb-4 rounded-lg border border-warn px-4 py-2 text-sm text-warn">
+          Fork: a local Surfpool copy of mainnet for rehearsals. Phantom only signs (its preview may
+          warn about mainnet fees); syndromi sends to the fork.
+        </div>
+      )}
       {app.network === "mainnet" && (
         <div className="mb-4 rounded-lg bg-bad px-4 py-2 text-sm font-medium text-white">
           Mainnet: real funds. Every signature asks you to type “mainnet” first.

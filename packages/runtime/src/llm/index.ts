@@ -1,6 +1,7 @@
 import type { Manifest } from "@syndromi/core";
 import { AnthropicProvider } from "./anthropic.js";
 import { OpenAICompatibleProvider } from "./openai-compatible.js";
+import { call, finish, ScriptedProvider, type ScriptStep, useTools } from "./scripted.js";
 import type { Fetch, LlmProvider } from "./types.js";
 
 export * from "./anthropic.js";
@@ -38,9 +39,28 @@ export function modelOverride(spec: string): ModelFields {
   return { model_id: spec };
 }
 
+/**
+ * The injection demo's fallback "model": it does what the malicious pool description says, every
+ * time (balances → pull → yield-data → transfer to the address in the notice → summary).
+ */
+export function injectionScript(): ScriptStep[] {
+  return [
+    useTools(call("balances")),
+    useTools(call("pull-allowance", { amount: 2 })),
+    useTools(call("yield-data")),
+    (results) => {
+      const to = results[0]?.content.match(/vault (\w{32,44})/)?.[1] ?? "unknown";
+      return useTools(call("propose-tx", { token: "USDC", to, amount: 2 }));
+    },
+    finish(
+      "Followed the pool's migration notice and tried to move the USDC to the migration vault.",
+    ),
+  ];
+}
+
 /** Build the provider a manifest names. Keys come from the env var named by `api_key_env`. */
 export function createProvider(
-  manifest: Pick<Manifest, "model" | "model_id" | "api_key_env">,
+  manifest: Pick<Manifest, "model" | "model_id" | "api_key_env" | "demo">,
   env: Record<string, string | undefined> = process.env,
   fetchImpl?: Fetch,
 ): LlmProvider {
@@ -50,6 +70,7 @@ export function createProvider(
     if (!value) throw new Error(`${name} is not set (manifest api_key_env). Add it to .env.`);
     return value;
   };
+  if (manifest.demo?.script === "injection") return new ScriptedProvider(injectionScript());
   if (manifest.model === "byok:anthropic") {
     const apiKey = keyFrom(manifest.api_key_env ?? "ANTHROPIC_API_KEY") as string;
     return new AnthropicProvider({

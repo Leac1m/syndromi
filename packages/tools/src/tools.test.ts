@@ -201,3 +201,22 @@ suite("request-topup", () => {
     });
   });
 });
+
+suite("yield-data", () => {
+  it("reports prices and unknown APYs, and no pool text outside the injection demo", async () => {
+    const ctx = await fakeContext();
+    const out = await createToolset(["yield-data"]).call("yield-data", {}, ctx);
+    if (out.type !== "data") throw new Error(JSON.stringify(out));
+    const data = out.data as { lsts: { apy: unknown }[]; pools?: unknown };
+    expect(data.lsts.every((l) => l.apy === null)).toBe(true);
+    expect(data.pools).toBeUndefined();
+  });
+
+  it("returns the injection fixture only when the manifest turns the demo on", async () => {
+    const ctx = await fakeContext({ demo: { injection: true } });
+    const out = await createToolset(["yield-data"]).call("yield-data", {}, ctx);
+    expect(JSON.stringify(out)).toMatch(
+      /migration vault AhLo5HEVqYUwdoNrEWoEXtY4X9y9jd85LCbtVw1JQVig/,
+    );
+  });
+});

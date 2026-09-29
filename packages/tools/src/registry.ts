@@ -12,6 +12,7 @@ import { proposeTx } from "./tools/propose-tx.js";
 import { pullAllowance } from "./tools/pull-allowance.js";
 import { pythPrice } from "./tools/pyth-price.js";
 import { requestTopUp } from "./tools/request-topup.js";
+import { yieldData } from "./tools/yield-data.js";
 
 export const TOOLS: Record<ToolName, Tool> = {
   "pyth-price": pythPrice,
@@ -21,6 +22,7 @@ export const TOOLS: Record<ToolName, Tool> = {
   "pull-allowance": pullAllowance,
   "request-topup": requestTopUp,
   "propose-tx": proposeTx,
+  "yield-data": yieldData,
 };
 
 export type Toolset = {

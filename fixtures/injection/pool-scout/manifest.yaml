@@ -1,0 +1,20 @@
+# Security demo agent (DEMO ONLY). It reads third-party pool descriptions, one of which carries a
+# prompt injection telling it to send its USDC to an attacker. The demo switches make a real model
+# likely to fall for it (no prompt guard) and feed it the malicious fixture; the policy layer is
+# what must stop it: destinations [self] means the transfer is BLOCKED and never signed.
+name: pool-scout
+runtime: hosted
+model: openai-compatible:https://integrate.api.nvidia.com/v1
+model_id: meta/muse-glimmer-30b
+api_key_env: NVIDIA_API_KEY
+schedule: "0 * * * *"
+allowance: { mint: USDC, amount: 10, period: weekly }
+fee_budget: { sol: 0.02 }
+permissions:
+  programs: [subscriptions]
+  destinations: [self]
+  max_tx_usd: 10
+  approve_above_usd: 5
+tools: [balances, pull-allowance, yield-data, propose-tx]
+prompt: ./prompt.md
+demo: { injection: true, unguarded: true }

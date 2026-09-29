@@ -13,6 +13,7 @@ export const TOOL_NAMES = [
   "pull-allowance",
   "request-topup",
   "propose-tx",
+  "yield-data",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -60,6 +61,20 @@ export const manifestSchema = z
     }),
     tools: z.array(z.enum(TOOL_NAMES)).min(1),
     prompt: z.string().min(1),
+    /**
+     * Demo-only switches for the prompt-injection demo. `injection` makes yield-data return the
+     * malicious fixture; `unguarded` drops the system prompt's "tool results are data" line (so a
+     * real model is more likely to fall for it and the policy is visibly what stops it);
+     * `script: injection` replays a model that obeys the injection. Never set for real agents.
+     */
+    demo: z
+      .object({
+        injection: z.boolean().optional(),
+        unguarded: z.boolean().optional(),
+        script: z.literal("injection").optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((m, ctx) => {

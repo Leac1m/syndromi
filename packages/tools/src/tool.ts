@@ -29,6 +29,8 @@ export type ToolContext = {
   /** Agent-side subscriptions client whose payer is a noop signer (tools never hold keys). */
   bag: BagClient;
   jupiter?: { apiKey?: string; fetch?: typeof fetch };
+  /** Demo-only: yield-data also returns the prompt-injection fixture. */
+  demo?: { injection?: boolean };
 };
 
 /** An owner-approval request that is not a transaction, e.g. a top-up. */

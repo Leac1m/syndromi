@@ -72,6 +72,7 @@ export function prepareAgent(opts: {
     allowanceMint: allowanceMint(opts.manifest, network),
     bag,
     jupiter: env.JUPITER_API_KEY ? { apiKey: env.JUPITER_API_KEY } : {},
+    ...(opts.manifest.demo?.injection ? { demo: { injection: true } } : {}),
   };
   return {
     ctx,

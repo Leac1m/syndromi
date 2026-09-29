@@ -95,4 +95,11 @@ describe("parseManifest", () => {
       /api_key_env must be an env var name/,
     );
   });
+
+  it("accepts only the known demo switches", () => {
+    expect(
+      parseManifest(`${valid}\ndemo: { injection: true, unguarded: true, script: injection }\n`).ok,
+    ).toBe(true);
+    expect(errorsFor(`${valid}\ndemo: { skip_policy: true }\n`).join("\n")).toMatch(/skip_policy/);
+  });
 });

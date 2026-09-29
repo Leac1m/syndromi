@@ -217,7 +217,29 @@ importers:
 
   packages/runtime: {}
 
-  packages/tools: {}
+  packages/tools:
+    dependencies:
+      '@solana-program/compute-budget':
+        specifier: ^0.17.0
+        version: 0.17.0(@solana/kit@7.1.1(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2))
+      '@solana-program/system':
+        specifier: ^0.13.0
+        version: 0.13.0(@solana/kit@7.1.1(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2))
+      '@solana-program/token':
+        specifier: ^0.15.0
+        version: 0.15.0(@solana/kit@7.1.1(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2))
+      '@solana/kit':
+        specifier: ^7.1.1
+        version: 7.1.1(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)
+      '@solana/subscriptions':
+        specifier: ^0.5.0
+        version: 0.5.0(@solana/kit@7.1.1(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2))(@solana/sysvars@7.1.1(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2))(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)
+      '@syndromi/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
 
   scripts:
     dependencies:
@@ -251,6 +273,9 @@ importers:
       '@syndromi/core':
         specifier: workspace:*
         version: link:../packages/core
+      '@syndromi/tools':
+        specifier: workspace:*
+        version: link:../packages/tools
     devDependencies:
       tsx:
         specifier: ^4.23.15

@@ -40,8 +40,8 @@ import {
 } from "@swig-wallet/kit";
 // The kit package re-exports these in its types but not in its ESM build.
 import { Actions, createEd25519AuthorityInfo } from "@swig-wallet/lib";
+import { FORK_DEXES, fetchBuild, lookupTables, swapInstructions } from "@syndromi/tools";
 import { explorerTx } from "./lib/cluster.js";
-import { FORK_DEXES, fetchBuild, lookupTables, swapInstructions } from "./lib/jupiter.js";
 import { Report } from "./lib/report.js";
 import { assertSurfpoolRunning, cheatcode, forkRpc, sendToFork } from "./lib/surfpool.js";
 

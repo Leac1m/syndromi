@@ -18,6 +18,10 @@ type ApiInstruction = {
 export type BuildResponse = {
   inAmount: string;
   outAmount: string;
+  /** Minimum output after slippage. */
+  otherAmountThreshold: string;
+  priceImpactPct?: string;
+  routePlan?: { swapInfo?: { label?: string } }[];
   computeBudgetInstructions: ApiInstruction[];
   setupInstructions: ApiInstruction[];
   swapInstruction: ApiInstruction;
@@ -42,7 +46,12 @@ export type BuildParams = {
  */
 export const FORK_DEXES = "Whirlpool,Raydium CLMM";
 
-export async function fetchBuild(p: BuildParams): Promise<BuildResponse> {
+export type JupiterOptions = { apiKey?: string; fetch?: typeof fetch };
+
+export async function fetchBuild(
+  p: BuildParams,
+  opts: JupiterOptions = { apiKey: process.env.JUPITER_API_KEY },
+): Promise<BuildResponse> {
   const params = new URLSearchParams({
     inputMint: p.inputMint,
     outputMint: p.outputMint,
@@ -52,8 +61,8 @@ export async function fetchBuild(p: BuildParams): Promise<BuildResponse> {
   });
   if (p.dexes) params.set("dexes", p.dexes);
   const headers: Record<string, string> = {};
-  if (process.env.JUPITER_API_KEY) headers["x-api-key"] = process.env.JUPITER_API_KEY;
-  const res = await fetch(`${JUPITER_BUILD}?${params}`, { headers });
+  if (opts.apiKey) headers["x-api-key"] = opts.apiKey;
+  const res = await (opts.fetch ?? fetch)(`${JUPITER_BUILD}?${params}`, { headers });
   if (!res.ok) throw new Error(`Jupiter HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
   return (await res.json()) as BuildResponse;
 }

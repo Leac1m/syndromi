@@ -11,7 +11,6 @@
     "demo:core": "tsx --env-file=../.env demo-core.ts"
   },
   "dependencies": {
-    "@syndromi/core": "workspace:*",
     "@solana-program/compute-budget": "^0.17.0",
     "@solana-program/system": "^0.13.0",
     "@solana-program/token": "^0.15.0",
@@ -20,7 +19,9 @@
     "@solana/kit-plugin-signer": "^0.13.0",
     "@solana/subscriptions": "^0.5.0",
     "@swig-wallet/kit": "^2.1.0",
-    "@swig-wallet/lib": "2.1.0"
+    "@swig-wallet/lib": "2.1.0",
+    "@syndromi/core": "workspace:*",
+    "@syndromi/tools": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.15"

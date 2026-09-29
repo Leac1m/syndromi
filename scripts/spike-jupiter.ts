@@ -25,8 +25,8 @@ import {
   getSetComputeUnitLimitInstruction,
 } from "@solana-program/compute-budget";
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
+import { FORK_DEXES, fetchBuild, lookupTables, swapInstructions } from "@syndromi/tools";
 import { explorerTx } from "./lib/cluster.js";
-import { FORK_DEXES, fetchBuild, lookupTables, swapInstructions } from "./lib/jupiter.js";
 import { Report } from "./lib/report.js";
 import { assertSurfpoolRunning, cheatcode, forkRpc, sendToFork } from "./lib/surfpool.js";
 

@@ -69,3 +69,9 @@ export function mintFor(token: TokenInfo, network: Network): Address {
 export function toUiAmount(amount: bigint, decimals: number): number {
   return Number(amount) / 10 ** decimals;
 }
+
+/** UI amount → base units, rounded to the token's precision. */
+export function toBaseUnits(amount: number, decimals: number): bigint {
+  const [whole = "0", frac = ""] = amount.toFixed(decimals).split(".");
+  return BigInt(whole) * 10n ** BigInt(decimals) + BigInt(frac.padEnd(decimals, "0") || "0");
+}

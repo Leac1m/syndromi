@@ -8,5 +8,14 @@
   },
   "scripts": {
     "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@solana-program/compute-budget": "^0.17.0",
+    "@solana-program/system": "^0.13.0",
+    "@solana-program/token": "^0.15.0",
+    "@solana/kit": "^7.1.1",
+    "@solana/subscriptions": "^0.5.0",
+    "@syndromi/core": "workspace:*",
+    "zod": "^4.6.5"
   }
 }

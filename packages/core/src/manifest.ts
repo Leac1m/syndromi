@@ -14,6 +14,7 @@ export const TOOL_NAMES = [
   "request-topup",
   "propose-tx",
 ] as const;
+export type ToolName = (typeof TOOL_NAMES)[number];
 
 export const PERIODS = { daily: 86_400, weekly: 604_800, monthly: 2_592_000 } as const;
 export type Period = keyof typeof PERIODS;

@@ -248,6 +248,9 @@ importers:
       '@swig-wallet/lib':
         specifier: 2.1.0
         version: 2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(ws@8.22.0)
+      '@syndromi/core':
+        specifier: workspace:*
+        version: link:../packages/core
     devDependencies:
       tsx:
         specifier: ^4.23.15

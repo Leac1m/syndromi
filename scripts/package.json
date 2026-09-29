@@ -7,9 +7,11 @@
     "typecheck": "tsc -p .",
     "spike:delegation": "tsx --env-file=../.env spike-delegation.ts",
     "spike:jupiter": "tsx --env-file=../.env spike-jupiter.ts",
-    "spike:swig": "tsx --env-file=../.env spike-swig.ts"
+    "spike:swig": "tsx --env-file=../.env spike-swig.ts",
+    "demo:core": "tsx --env-file=../.env demo-core.ts"
   },
   "dependencies": {
+    "@syndromi/core": "workspace:*",
     "@solana-program/compute-budget": "^0.17.0",
     "@solana-program/system": "^0.13.0",
     "@solana-program/token": "^0.15.0",

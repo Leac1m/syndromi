@@ -28,7 +28,8 @@ const EXPANSIONS: Record<ProgramName, Address[]> = {
   jupiter: [JUPITER_PROGRAM_ADDRESS, ASSOCIATED_TOKEN_PROGRAM_ADDRESS, TOKEN_PROGRAM_ADDRESS],
   token: [TOKEN_PROGRAM_ADDRESS, ASSOCIATED_TOKEN_PROGRAM_ADDRESS],
   system: [SYSTEM_PROGRAM_ADDRESS],
-  subscriptions: [SUBSCRIPTIONS_PROGRAM_ADDRESS],
+  // Pulls create the agent's own token account if needed; the policy checks its owner.
+  subscriptions: [SUBSCRIPTIONS_PROGRAM_ADDRESS, ASSOCIATED_TOKEN_PROGRAM_ADDRESS],
 };
 
 /** Always allowed: compute-budget instructions carry no funds. */

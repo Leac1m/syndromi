@@ -70,12 +70,6 @@ export type TopUpRecord = {
   expiresAt: string;
   /** The fixed-delegation PDA the owner's approval transaction creates (set when built). */
   delegation?: Address;
-  /**
-   * What the transaction issued for signing does: fee payer, blockhash and its non-compute-budget
-   * instructions, canonicalised. A submitted transaction must match it (wallets may add
-   * compute-budget instructions, e.g. Phantom's priority fee, and nothing else).
-   */
-  issuedMessage?: string;
   approvalSignature?: string;
   resultSignature?: string;
   resultError?: string;
@@ -103,6 +97,7 @@ create table if not exists sign_requests (
   nonce text primary key, draft_id text not null, text text not null, created_at text not null,
   used integer not null default 0);
 create table if not exists settings (key text primary key, value text not null);
+create table if not exists owner_txs (id text primary key, data text not null);
 `;
 
 const json = (value: unknown) =>
@@ -315,6 +310,22 @@ export class Store {
     if (!row || row.used || row.draft_id !== draftId) return undefined;
     this.db.prepare("update sign_requests set used = 1 where nonce = ?").run(nonce);
     return row.text;
+  }
+
+  // ------------------------------------------------------------------ owner transactions
+  saveOwnerTx(tx: { id: string } & Record<string, unknown>) {
+    this.db
+      .prepare(
+        "insert into owner_txs values (?, ?) on conflict(id) do update set data = excluded.data",
+      )
+      .run(tx.id, json(tx));
+  }
+
+  ownerTx<T>(id: string): T | undefined {
+    const row = this.db.prepare("select data from owner_txs where id = ?").get(id) as
+      | { data: string }
+      | undefined;
+    return row ? (JSON.parse(row.data) as T) : undefined;
   }
 
   // ------------------------------------------------------------------ settings

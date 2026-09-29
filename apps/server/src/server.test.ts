@@ -7,6 +7,7 @@ import {
   createTransactionMessage,
   generateKeyPairSigner,
   getBase58Decoder,
+  getBase64EncodedWireTransaction,
   getUtf8Encoder,
   type Instruction,
   type KeyPairSigner,
@@ -22,10 +23,10 @@ import {
 } from "@solana-program/compute-budget";
 import type { Transformer } from "grammy";
 import { beforeEach, describe, expect, it } from "vitest";
-import { describeMessage } from "./actions/approve-topup.js";
 import { createApp } from "./app.js";
 import { createContext, type ServerContext } from "./context.js";
 import { Store } from "./db.js";
+import { describeMessage } from "./owner-tx.js";
 import { createTelegram } from "./telegram.js";
 
 const TOKEN = "test-token";
@@ -208,22 +209,61 @@ describe("top-up requests", () => {
     expect(
       (await action(`/actions/approve-topup/${id}`, { account: stranger.address })).status,
     ).toBe(403);
+  });
+});
 
-    // Only the exact transaction issued for this top-up may be submitted.
-    ctx.store.updateTopUp(id, { issuedMessage: "AAAA" });
-    const other = await action(`/actions/approve-topup/${id}/submit`, {
-      account: owner.address,
-      transaction: `AQ${"A".repeat(86)}AQID`, // one empty signature + a 3-byte "message"
+describe("owner transactions (/actions/tx/:id/submit)", () => {
+  it("sends only the transaction that was issued, signed by its owner, once", async () => {
+    const build = (data: number) =>
+      compileTransaction(
+        pipe(
+          createTransactionMessage({ version: 0 }),
+          (m) => setTransactionMessageFeePayer(owner.address, m),
+          (m) =>
+            setTransactionMessageLifetimeUsingBlockhash(
+              {
+                blockhash: blockhash("11111111111111111111111111111111"),
+                lastValidBlockHeight: 1n,
+              },
+              m,
+            ),
+          (m) =>
+            appendTransactionMessageInstructions(
+              [{ programAddress: SUBSCRIPTIONS_PROGRAM_ADDRESS, data: new Uint8Array([data]) }],
+              m,
+            ),
+        ),
+      );
+    const issued = build(1);
+    ctx.store.saveOwnerTx({
+      id: "x_test",
+      owner: owner.address,
+      cluster: "devnet",
+      kind: "topup",
+      ref: "t_x",
+      description: describeMessage(issued.messageBytes),
+      status: "issued",
+      createdAt: new Date().toISOString(),
     });
-    expect(other.status).toBe(400);
-    expect(await other.json()).toMatchObject({
-      message: /not the transaction that was issued|Not a transaction|Could not read/,
+    const submit = (account: string, tx = build(2)) =>
+      action("/actions/tx/x_test/submit", {
+        account,
+        transaction: getBase64EncodedWireTransaction(tx),
+      });
+
+    const different = await submit(owner.address);
+    expect(different.status).toBe(400);
+    expect(await different.json()).toMatchObject({
+      message: /not the transaction that was issued/,
     });
-    const notOwner = await action(`/actions/approve-topup/${id}/submit`, {
-      account: stranger.address,
-      transaction: "x",
+    expect((await submit(stranger.address, issued)).status).toBe(403);
+
+    ctx.store.saveOwnerTx({
+      ...(ctx.store.ownerTx("x_test") as object),
+      id: "x_test",
+      status: "sent",
     });
-    expect(notOwner.status).toBe(400);
+    expect((await submit(owner.address, issued)).status).toBe(409);
   });
 });
 

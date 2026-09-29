@@ -38,6 +38,9 @@ export type AgentRegistration = {
   cluster: Cluster;
   allowanceMint: Address;
   rules: { maxTxUsd: number; approveAboveUsd: number; destinations: string[]; programs: string[] };
+  runtime?: "local" | "hosted";
+  allowance?: { mint: string; amount: number; period: "daily" | "weekly" | "monthly" };
+  feeBudgetSol?: number;
 };
 
 export class ServerClient {

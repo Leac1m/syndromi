@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   generateAgentKeypair,
+  listDelegations,
   loadLocalKeypair,
   parseManifest,
   SURFPOOL_URL,
@@ -155,5 +156,23 @@ describe.skipIf(!surfpoolUp)("approvals end to end on the fork", () => {
     await main(["watch", dir, "--once", "--fork"], io, env);
     const pulled = store.topUp(String(topup?.id));
     expect(pulled?.status, pulled?.resultError).toBe("pulled");
+
+    // 5. A local agent registered from the CLI is funded through the fund-agent Action (what the
+    //    dashboard wizard signs), then the kill switch revokes everything in one signature.
+    const dcaDir = join(home, "dca");
+    await main(
+      ["init", "dca-agent", "--dir", dcaDir, "--owner", ownerKey.signer.address, "--fork"],
+      io,
+      env,
+    );
+    expect(store.agent("dca-agent")).toMatchObject({ runtime: "local", allowance: { amount: 20 } });
+    await main(["action", "/actions/fund-agent/dca-agent", "--fork"], io, env);
+    const funded = await listDelegations(agent.rpc, ownerKey.signer.address);
+    expect(funded.filter((d) => d.kind === "allowance")).toHaveLength(2);
+    expect(io.lines.join("\n")).toMatch(/Funded/);
+
+    await main(["action", "/actions/kill-switch?cluster=fork", "--fork"], io, env);
+    expect(await listDelegations(agent.rpc, ownerKey.signer.address)).toEqual([]);
+    expect(io.lines.join("\n")).toMatch(/Everything revoked/);
   });
 });

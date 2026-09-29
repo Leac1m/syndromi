@@ -2,17 +2,23 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { mountApproveDraft } from "./actions/approve-draft.js";
 import { mountApproveTopUp } from "./actions/approve-topup.js";
+import { mountFundAgent } from "./actions/fund-agent.js";
+import { mountKillSwitch } from "./actions/kill-switch.js";
 import { mountSpec } from "./actions/spec.js";
 import { mountApi } from "./api.js";
 import { mountApprovePage } from "./approve-page.js";
 import type { ServerContext } from "./context.js";
 import { mountOwner } from "./owner.js";
+import { mountOwnerTx } from "./owner-tx.js";
 
 export function createApp(ctx: ServerContext) {
   const app = new Hono();
   const icon = mountSpec(app, ctx.config.publicUrl);
   mountApproveDraft(app, ctx, icon);
   mountApproveTopUp(app, ctx, icon);
+  mountFundAgent(app, ctx, icon);
+  mountKillSwitch(app, ctx, icon);
+  mountOwnerTx(app, ctx, icon);
   mountApprovePage(app, ctx);
   mountApi(app, ctx);
   mountOwner(app, ctx);

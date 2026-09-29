@@ -1,6 +1,7 @@
 import { access, cp } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { agentDir, generateAgentKeypair, saveLocalKeypair } from "@syndromi/core";
+import { isAddress } from "@solana/kit";
+import { agentDir, type Cluster, generateAgentKeypair, saveLocalKeypair } from "@syndromi/core";
 import {
   agentConfigPath,
   type Env,
@@ -9,6 +10,7 @@ import {
   writeAgentConfig,
 } from "../context.js";
 import { CliError, type Io } from "../io.js";
+import { registrationOf, serverFrom } from "../session.js";
 
 export const TEMPLATES_DIR = new URL("../../../../templates/", import.meta.url).pathname;
 
@@ -24,7 +26,7 @@ const exists = (path: string) =>
  */
 export async function init(
   target: string,
-  opts: { dir?: string },
+  opts: { dir?: string; server?: string; owner?: string; cluster?: Cluster },
   io: Io,
   env: Env,
   templatesDir = TEMPLATES_DIR,
@@ -52,12 +54,27 @@ export async function init(
   const secret = await passphrase(io, env, true);
   const keypair = await generateAgentKeypair();
   const path = await saveLocalKeypair(manifest.name, keypair, secret, { root: env.SYNDROMI_HOME });
+  const owner = opts.owner && isAddress(opts.owner) ? opts.owner : undefined;
+  if (opts.owner && !owner) throw new CliError(`--owner ${opts.owner} is not a Solana address`);
   await writeAgentConfig(
-    { name: manifest.name, address: keypair.signer.address, createdAt: new Date().toISOString() },
+    {
+      name: manifest.name,
+      address: keypair.signer.address,
+      ...(owner ? { owner } : {}),
+      createdAt: new Date().toISOString(),
+    },
     env,
   );
   io.print(`agent   ${manifest.name}  ${keypair.signer.address}`);
   io.print(`key     ${path} (encrypted)`);
-  io.print(`next    syndromi fund ${dir} [--fork]`);
+  const server = serverFrom(opts.server, env);
+  if (server && owner) {
+    await server.register(
+      registrationOf(manifest, keypair.signer.address, owner, opts.cluster ?? "devnet"),
+    );
+    io.print(`server  registered; fund it from the dashboard (or: syndromi fund ${dir})`);
+  } else {
+    io.print(`next    syndromi fund ${dir} [--fork]`);
+  }
   return { dir, name: manifest.name, address: keypair.signer.address };
 }

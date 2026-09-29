@@ -1,8 +1,7 @@
 import { type Cluster, toBaseUnits, tokenByMint } from "@syndromi/core";
-import { allowanceMint } from "@syndromi/runtime";
 import { type Env, loadAgentDir, readAgentConfig } from "../context.js";
 import { CliError, type Io } from "../io.js";
-import { requireServer } from "../session.js";
+import { registrationOf, requireServer } from "../session.js";
 
 /**
  * `syndromi request-topup <dir> --amount n --reason "…"`: file a top-up request for an agent
@@ -22,21 +21,10 @@ export async function requestTopUp(
   const config = await readAgentConfig(manifest.name, env);
   if (!config.owner)
     throw new CliError(`agent "${manifest.name}" has no allowance yet; run: syndromi fund ${dir}`);
-  const mint = allowanceMint(manifest, opts.cluster === "devnet" ? "devnet" : "mainnet");
+  const registration = registrationOf(manifest, config.address, config.owner, opts.cluster);
+  const mint = registration.allowanceMint;
   const decimals = tokenByMint(mint)?.decimals ?? 6;
-  await client.register({
-    name: manifest.name,
-    address: config.address,
-    owner: config.owner,
-    cluster: opts.cluster,
-    allowanceMint: mint,
-    rules: {
-      maxTxUsd: manifest.permissions.max_tx_usd,
-      approveAboveUsd: manifest.permissions.approve_above_usd,
-      destinations: manifest.permissions.destinations,
-      programs: manifest.permissions.programs,
-    },
-  });
+  await client.register(registration);
   const saved = await client.requestTopUp(manifest.name, {
     mint,
     amount: toBaseUnits(amount, decimals),

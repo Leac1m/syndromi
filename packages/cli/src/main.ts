@@ -2,6 +2,7 @@
 // syndromi: create, fund, run, and revoke budgeted Solana agents.
 import { parseArgs } from "node:util";
 import { redact } from "@syndromi/core";
+import { action } from "./commands/action.js";
 import { approve } from "./commands/approve.js";
 import { fund } from "./commands/fund.js";
 import { init } from "./commands/init.js";
@@ -15,13 +16,17 @@ import { CliError, type Io, terminalIo } from "./io.js";
 
 const HELP = `syndromi <command>
 
-  init <template|dir> [--dir <path>]      copy a template and create the agent's encrypted key
+  init <template|dir> [--dir <path>] [--server <url> --owner <address>]
+                                          copy a template and create the agent's encrypted key;
+                                          with a server, register it for funding in the dashboard
   fund <dir>                              owner: send the fee budget and grant the allowance
   run <dir> [--once] [--server <url>] [--max-steps n] [--model [nvidia|gemini|anthropic:]id]
                                           run now (--once) or on the schedule; with a server,
                                           drafts go to Telegram and approvals are executed
   watch <dir> [--once] [--server <url>]   execute owner approvals only (no LLM)
   approve <id> [--reject] [--server <url>]   owner: approve or reject from the terminal
+  action <path> [--server <url>]          owner: run a server Action with the CLI key, e.g.
+                                          /actions/fund-agent/<name>, "/actions/kill-switch?cluster=devnet"
   request-topup <dir> --amount n --reason "…" [--server <url>]
   status                                  list the bag's delegations and what is left
   revoke --all | --agent <name> [--hard]  kill switch: revoke delegations
@@ -40,6 +45,7 @@ export async function main(argv: string[], io: Io = terminalIo, env: Env = proce
       "max-steps": { type: "string" },
       model: { type: "string" },
       server: { type: "string" },
+      owner: { type: "string" },
       reject: { type: "boolean" },
       amount: { type: "string" },
       reason: { type: "string" },
@@ -59,7 +65,17 @@ export async function main(argv: string[], io: Io = terminalIo, env: Env = proce
   };
   switch (values.help ? "help" : command) {
     case "init":
-      return init(needTarget(), values.dir ? { dir: values.dir } : {}, io, env);
+      return init(
+        needTarget(),
+        {
+          cluster,
+          ...(values.dir ? { dir: values.dir } : {}),
+          ...(values.server ? { server: values.server } : {}),
+          ...(values.owner ? { owner: values.owner } : {}),
+        },
+        io,
+        env,
+      );
     case "fund":
       return fund(needTarget(), { cluster }, io, env);
     case "run": {
@@ -96,6 +112,13 @@ export async function main(argv: string[], io: Io = terminalIo, env: Env = proce
           ...(values.reject ? { reject: true } : {}),
           ...(values.server ? { server: values.server } : {}),
         },
+        io,
+        env,
+      );
+    case "action":
+      return action(
+        needTarget(),
+        { cluster, ...(values.server ? { server: values.server } : {}) },
         io,
         env,
       );

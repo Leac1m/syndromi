@@ -1,6 +1,7 @@
 // Everything a command needs to act as an agent: manifest, prompt, decrypted key, prepared
 // runtime context, tools, and (optionally) the approvals server.
-import { agentDir, type Cluster, loadLocalKeypair } from "@syndromi/core";
+import type { Address } from "@solana/kit";
+import { agentDir, type Cluster, loadLocalKeypair, type Manifest, networkOf } from "@syndromi/core";
 import {
   type AgentRegistration,
   allowanceMint,
@@ -51,19 +52,7 @@ export async function openAgent(
     root: env.SYNDROMI_HOME,
   });
   const agent = prepareAgent({ manifest, cluster: opts.cluster, agentSigner, owner, env });
-  const registration: AgentRegistration = {
-    name: manifest.name,
-    address: agentSigner.address,
-    owner,
-    cluster: opts.cluster,
-    allowanceMint: allowanceMint(manifest, agent.ctx.network),
-    rules: {
-      maxTxUsd: manifest.permissions.max_tx_usd,
-      approveAboveUsd: manifest.permissions.approve_above_usd,
-      destinations: manifest.permissions.destinations,
-      programs: manifest.permissions.programs,
-    },
-  };
+  const registration = registrationOf(manifest, agentSigner.address, owner, opts.cluster);
   return {
     manifest,
     prompt: loaded.prompt,
@@ -71,5 +60,30 @@ export async function openAgent(
     tools: createToolset(manifest.tools),
     home: agentDir(manifest.name, env.SYNDROMI_HOME),
     registration,
+  };
+}
+
+/** What the server needs to show, fund and approve for an agent. */
+export function registrationOf(
+  manifest: Manifest,
+  address: Address,
+  owner: Address,
+  cluster: Cluster,
+): AgentRegistration {
+  return {
+    name: manifest.name,
+    address,
+    owner,
+    cluster,
+    allowanceMint: allowanceMint(manifest, networkOf(cluster)),
+    runtime: manifest.runtime,
+    allowance: manifest.allowance,
+    feeBudgetSol: manifest.fee_budget.sol,
+    rules: {
+      maxTxUsd: manifest.permissions.max_tx_usd,
+      approveAboveUsd: manifest.permissions.approve_above_usd,
+      destinations: manifest.permissions.destinations,
+      programs: manifest.permissions.programs,
+    },
   };
 }

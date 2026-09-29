@@ -28,6 +28,8 @@ export type ServerConfig = {
 
 export type ServerContext = {
   store: Store;
+  /** What happens after each kind of owner transaction lands (see owner-tx.ts). */
+  completions: Map<string, (tx: never, signature: string | undefined) => Promise<unknown>>;
   bus: Bus;
   config: ServerConfig;
   rpc(cluster: Cluster): ReturnType<typeof createSolanaRpc>;
@@ -39,6 +41,7 @@ export function createContext(store: Store, config: ServerConfig): ServerContext
   const rpcs = new Map<Cluster, ReturnType<typeof createSolanaRpc>>();
   return {
     store,
+    completions: new Map(),
     bus: new Bus(),
     config,
     rpc(cluster) {

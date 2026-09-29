@@ -57,6 +57,20 @@ export async function createTelegram(
     for (const t of topups) await send(topUpMessage(t), topUpKeyboard(t));
   });
 
+  bot.command("kill", async (c) => {
+    if (!isOwner(c.chat.id)) return;
+    const link = (cluster: string) =>
+      `${config.publicUrl}/blink?action=${encodeURIComponent(`/actions/kill-switch?cluster=${cluster}`)}`;
+    return c.reply(
+      "🛑 Kill switch: revoke every allowance and top-up. Sign in your wallet to confirm.",
+      {
+        reply_markup: new InlineKeyboard()
+          .url("Revoke all (devnet)", link("devnet"))
+          .url("Revoke all (mainnet)", link("mainnet")),
+      },
+    );
+  });
+
   bot.callbackQuery(/^reject:(d_\w+|t_\w+)$/, async (c) => {
     if (!isOwner(c.chat?.id)) return c.answerCallbackQuery({ text: "Not allowed." });
     const id = c.match[1] ?? "";
@@ -142,6 +156,14 @@ export async function createTelegram(
   });
 
   bus.on("activity", (agentName, e) => {
+    if (e.type === "kill") {
+      void send(
+        e.left
+          ? `🛑 Kill switch: some delegations revoked on ${esc(String(e.cluster))}; ${e.left} left.`
+          : `🛑 Kill switch: every delegation on ${esc(String(e.cluster))} is revoked. No agent can pull from your bag.`,
+      );
+      return;
+    }
     if (e.type !== "blocked") return;
     const reasons = (e.reasons as string[] | undefined) ?? [];
     void send(

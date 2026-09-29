@@ -1,44 +1,21 @@
 // Approve a top-up by signing a transaction that creates a one-time fixed delegation:
-//   GET  /actions/approve-topup/:id          → the card
-//   POST /actions/approve-topup/:id          → {type:"transaction", transaction:<base64, unsigned>}
-//   POST /actions/approve-topup/:id/confirm  → callback after it lands; the sweeper also checks
-//   POST /actions/approve-topup/:id/submit   → our viewer's path: the wallet only signs and the
-//        server sends it to the agent's cluster (wallets send on their own selected network)
-import type {
-  ActionGetResponse,
-  CompletedAction,
-  NextActionPostRequest,
-  TransactionResponse,
-} from "@solana/actions-spec";
-import {
-  appendTransactionMessageInstructions,
-  compileTransaction,
-  createTransactionMessage,
-  decompileTransactionMessage,
-  getBase64Decoder,
-  getBase64EncodedWireTransaction,
-  getBase64Encoder,
-  getCompiledTransactionMessageDecoder,
-  getTransactionDecoder,
-  pipe,
-  prependTransactionMessageInstructions,
-  type ReadonlyUint8Array,
-  setTransactionMessageFeePayer,
-  setTransactionMessageLifetimeUsingBlockhash,
-} from "@solana/kit";
-import {
-  COMPUTE_BUDGET_PROGRAM_ADDRESS,
-  estimateComputeUnitLimitFactory,
-  getSetComputeUnitLimitInstruction,
-  getSetComputeUnitPriceInstruction,
-} from "@solana-program/compute-budget";
-import { grantTopUp, sendAndConfirm, tokenByMint, toUiAmount } from "@syndromi/core";
+//   GET  /actions/approve-topup/:id  → the card
+//   POST /actions/approve-topup/:id  → an owner transaction (see owner-tx.ts); once it lands the
+//                                      top-up is approved (the sweeper also checks onchain)
+import type { ActionGetResponse, CompletedAction } from "@solana/actions-spec";
+import { grantTopUp, tokenByMint, toUiAmount } from "@syndromi/core";
 import type { Context, Hono } from "hono";
 import type { ServerContext } from "../context.js";
+import { issueOwnerTx, onOwnerTxLanded } from "../owner-tx.js";
 import { checkTopUp } from "../sweeper.js";
 import { actionError, actionJson } from "./spec.js";
 
 export const TOPUP_EXPIRY_S = 7 * 86_400;
+
+export const amountText = (t: { mint: string; amount: bigint }) => {
+  const token = tokenByMint(t.mint as never);
+  return `${toUiAmount(t.amount, token?.decimals ?? 6)} ${token?.symbol ?? "tokens"}`;
+};
 
 export function mountApproveTopUp(app: Hono, ctx: ServerContext, icon: string) {
   const { store } = ctx;
@@ -51,10 +28,6 @@ export function mountApproveTopUp(app: Hono, ctx: ServerContext, icon: string) {
       return { topup: store.updateTopUp(topup.id, { status: "expired" }) };
     }
     return { topup };
-  };
-  const amountText = (t: { mint: string; amount: bigint }) => {
-    const token = tokenByMint(t.mint as never);
-    return `${toUiAmount(t.amount, token?.decimals ?? 6)} ${token?.symbol ?? "tokens"}`;
   };
 
   app.get(path(":id"), (c) => {
@@ -87,136 +60,42 @@ export function mountApproveTopUp(app: Hono, ctx: ServerContext, icon: string) {
     if (account !== topup.owner) {
       return actionError(c, `Only the bag owner (${topup.owner}) can approve this top-up.`, 403);
     }
-    const client = ctx.ownerClient(topup.cluster, topup.owner);
-    let built: Awaited<ReturnType<typeof grantTopUp>>;
     try {
-      built = await grantTopUp(client, {
+      const built = await grantTopUp(ctx.ownerClient(topup.cluster, topup.owner), {
         agent: topup.agent,
         mint: topup.mint,
         amount: topup.amount,
         expiresInSeconds: TOPUP_EXPIRY_S,
       });
+      store.updateTopUp(topup.id, { delegation: built.delegation });
+      const response = await issueOwnerTx(ctx, {
+        owner: topup.owner,
+        cluster: topup.cluster,
+        kind: "topup",
+        ref: topup.id,
+        instructions: built.instructions,
+        message: `Approve a one-time top-up of ${amountText(topup)} for ${topup.agentName}`,
+      });
+      return actionJson(c, response, topup.cluster);
     } catch (e) {
       return actionError(c, `Could not build the top-up: ${(e as Error).message}`, 500);
     }
-    const rpc = ctx.rpc(topup.cluster);
-    const { value: blockhash } = await rpc.getLatestBlockhash().send();
-    const unsized = pipe(
-      createTransactionMessage({ version: 0 }),
-      (m) => setTransactionMessageFeePayer(topup.owner, m),
-      (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
-      (m) => appendTransactionMessageInstructions(built.instructions, m),
-    );
-    // Our own compute budget, so wallets have less reason to rewrite the transaction.
-    const units = await estimateComputeUnitLimitFactory({ rpc })(unsized).catch(() => 150_000);
-    const transaction = compileTransaction(
-      prependTransactionMessageInstructions(
-        [
-          getSetComputeUnitLimitInstruction({ units: Math.ceil(units * 1.3) }),
-          getSetComputeUnitPriceInstruction({ microLamports: 10_000n }),
-        ],
-        unsized,
-      ),
-    );
-    store.updateTopUp(topup.id, {
-      delegation: built.delegation,
-      issuedMessage: describeMessage(transaction.messageBytes),
-    });
-    const body: TransactionResponse = {
-      type: "transaction",
-      transaction: getBase64EncodedWireTransaction(transaction),
-      message: `Approve a one-time top-up of ${amountText(topup)} for ${topup.agentName}`,
-      links: { next: { type: "post", href: `${path(topup.id)}/confirm` } },
-    };
-    return actionJson(c, body, topup.cluster);
   });
 
-  app.post(`${path(":id")}/submit`, async (c) => {
-    const { topup, error } = load(c);
-    if (!topup) return error;
-    if (topup.status !== "pending") return actionError(c, `This request is ${topup.status}.`, 409);
-    const body = (await c.req.json().catch(() => ({}))) as {
-      account?: string;
-      transaction?: string;
-    };
-    if (body.account !== topup.owner || !body.transaction || !topup.issuedMessage) {
-      return actionError(c, "Request the transaction first, signed by the bag owner.", 400);
-    }
-    let signed: ReturnType<ReturnType<typeof getTransactionDecoder>["decode"]>;
-    try {
-      signed = getTransactionDecoder().decode(getBase64Encoder().encode(body.transaction));
-    } catch {
-      return actionError(c, "Not a transaction.", 400);
-    }
-    // Only what we issued may be sent: same payer, blockhash and instructions. Wallets may add
-    // compute-budget instructions (Phantom adds a priority fee) and nothing else.
-    let submitted: string;
-    try {
-      submitted = describeMessage(signed.messageBytes);
-    } catch {
-      return actionError(c, "Could not read the signed transaction.", 400);
-    }
-    if (submitted !== topup.issuedMessage) {
-      return actionError(c, "This is not the transaction that was issued for this top-up.", 400);
-    }
-    let signature: string;
-    try {
-      signature = await sendAndConfirm(
-        ctx.rpc(topup.cluster),
-        signed as Parameters<typeof sendAndConfirm>[1],
-      );
-    } catch (e) {
-      return actionError(c, `Sending failed: ${(e as Error).message}`, 502);
-    }
-    const updated = await checkTopUp(ctx, store.topUp(topup.id) ?? topup, signature);
+  onOwnerTxLanded(ctx, "topup", async (tx, signature) => {
+    const topup = store.topUp(tx.ref);
+    const updated = topup ? await checkTopUp(ctx, topup, signature) : undefined;
+    const approved = updated?.status === "approved";
     const done: CompletedAction = {
       type: "completed",
       icon,
-      title: updated.status === "approved" ? "Top-up approved" : "Sent, confirming…",
-      description: `${topup.agentName} can now pull ${amountText(topup)}. Transaction ${signature}.`,
-      label: updated.status === "approved" ? "Approved" : "Confirming",
-    };
-    return actionJson(c, done, topup.cluster);
-  });
-
-  app.post(`${path(":id")}/confirm`, async (c) => {
-    const { topup, error } = load(c);
-    if (!topup) return error;
-    const body = (await c.req.json().catch(() => ({}))) as Partial<NextActionPostRequest>;
-    const updated = await checkTopUp(ctx, topup, body.signature);
-    const done: CompletedAction = {
-      type: "completed",
-      icon,
-      title: updated.status === "approved" ? "Top-up approved" : "Confirming…",
+      title: approved ? "Top-up approved" : "Confirming…",
       description:
-        updated.status === "approved"
+        approved && topup
           ? `${topup.agentName} can now pull ${amountText(topup)}.`
           : "Waiting for the transaction to land; you'll get a Telegram confirmation.",
-      label: updated.status === "approved" ? "Approved" : "Confirming",
+      label: approved ? "Approved" : "Confirming",
     };
-    return actionJson(c, done, topup.cluster);
-  });
-}
-
-/**
- * A canonical description of what a message does, ignoring compute-budget instructions:
- * fee payer, blockhash, and each other instruction's program, accounts (with roles) and data.
- */
-export function describeMessage(messageBytes: ReadonlyUint8Array): string {
-  const message = decompileTransactionMessage(
-    getCompiledTransactionMessageDecoder().decode(messageBytes),
-  );
-  const b64 = getBase64Decoder();
-  return JSON.stringify({
-    feePayer: message.feePayer.address,
-    blockhash:
-      "blockhash" in message.lifetimeConstraint ? message.lifetimeConstraint.blockhash : "nonce",
-    instructions: message.instructions
-      .filter((ix) => ix.programAddress !== COMPUTE_BUDGET_PROGRAM_ADDRESS)
-      .map((ix) => ({
-        program: ix.programAddress,
-        accounts: (ix.accounts ?? []).map((a) => [a.address, a.role]),
-        data: ix.data ? b64.decode(ix.data) : "",
-      })),
+    return done;
   });
 }

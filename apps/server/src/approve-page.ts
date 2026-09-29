@@ -1,5 +1,7 @@
-// Our own Blink viewer: GET /approve/:id renders the Action behind a draft or top-up and walks
-// the owner's wallet through it via the Wallet Standard (no web3.js, no third-party host).
+// Our own Blink viewer: renders any of our Actions and walks the owner's wallet through it via
+// the Wallet Standard (no web3.js, no third-party host), following chained steps.
+//   GET /approve/:id               a draft (d_…) or top-up (t_…) approval, from Telegram
+//   GET /blink?action=/actions/…   any Action (e.g. the kill switch)
 // It speaks the same Actions endpoints any Blink client would, so dial.to and wallets with
 // native Blink support keep working when available.
 import type { Hono } from "hono";
@@ -24,6 +26,14 @@ export function mountApprovePage(app: Hono, ctx: ServerContext) {
         owner: record.owner,
       }),
     );
+  });
+
+  app.get("/blink", (c) => {
+    const action = c.req.query("action") ?? "";
+    if (!action.startsWith("/actions/")) return c.text("Unknown action.", 400);
+    const cluster = new URL(action, "http://x").searchParams.get("cluster");
+    const chain = cluster === "mainnet" || cluster === "fork" ? CHAINS.mainnet : CHAINS.devnet;
+    return c.html(page({ actionPath: action, chain, owner: "" }));
   });
 }
 
@@ -83,55 +93,66 @@ function pickWallet() {
   return ok.find((w) => /phantom/i.test(w.name)) || ok[0];
 }
 
-async function load() {
-  const res = await fetch(ACTION);
-  const a = await res.json();
-  if (!res.ok) { $("title").textContent = "Unavailable"; status(a.message || "Not found", true); return; }
+function render(a) {
   $("icon").src = a.icon; $("title").textContent = a.title; $("desc").textContent = a.description;
+  $("signing").hidden = true;
   const link = (a.links && a.links.actions && a.links.actions[0]) || { href: ACTION, label: a.label };
   // Wallets sign and send on their own selected network, whatever chain the page asks for.
-  if (link.type === "transaction" && CHAIN !== "solana:mainnet") {
-    $("network").hidden = false;
-    $("network").textContent = "Devnet transaction: your wallet only signs it and syndromi sends it to devnet. If the wallet's preview simulates on mainnet it may warn about fees; the fee is paid on devnet.";
-  }
+  $("network").hidden = !(link.type === "transaction" && CHAIN !== "solana:mainnet");
+  $("network").textContent = "Devnet transaction: your wallet only signs it and syndromi sends it to devnet. If the wallet's preview simulates on mainnet it may warn about fees; the fee is paid on devnet.";
+  if (a.type === "completed") { $("go").textContent = a.label; $("go").disabled = true; status("Done. You can close this tab."); return; }
   $("go").textContent = a.disabled ? a.label : link.label;
   $("go").disabled = !!a.disabled;
   $("go").onclick = () => approve(link.href).catch((e) => { status(e.message || String(e), true); $("go").disabled = false; });
 }
 
-async function approve(href) {
-  $("go").disabled = true;
+async function load() {
+  const res = await fetch(ACTION);
+  const a = await res.json();
+  if (!res.ok) { $("title").textContent = "Unavailable"; status(a.message || "Not found", true); return; }
+  render(a);
+}
+
+let connected;
+async function connect() {
+  if (connected) return connected;
   const wallet = pickWallet();
   if (!wallet) throw new Error("No Solana wallet found. Install or unlock Phantom, then reload.");
   status("Connecting " + wallet.name + "…");
   const { accounts } = await wallet.features["standard:connect"].connect();
-  const account = accounts.find((acc) => acc.address === OWNER) || accounts[0];
+  const account = (OWNER && accounts.find((acc) => acc.address === OWNER)) || accounts[0];
   if (!account) throw new Error("The wallet shared no account.");
-  if (account.address !== OWNER) throw new Error("Switch " + wallet.name + " to the bag owner " + OWNER + " (connected: " + account.address + ").");
+  if (OWNER && account.address !== OWNER) throw new Error("Switch " + wallet.name + " to the bag owner " + OWNER + " (connected: " + account.address + ").");
+  connected = { wallet, account };
+  return connected;
+}
+
+async function approve(href) {
+  $("go").disabled = true;
+  const { wallet, account } = await connect();
   const res = await post(href, { account: account.address });
-  let done;
+  let next;
   if (res.type === "message") {
     $("signing").hidden = false; $("signing").textContent = res.data;
     status("Sign the message in " + wallet.name + " (free, no transaction)…");
     const [out] = await wallet.features["solana:signMessage"].signMessage({ account, message: new TextEncoder().encode(res.data) });
-    done = await post(res.links.next.href, { account: account.address, signature: base58(out.signature), data: res.data, state: res.state });
-  } else if (res.type === "transaction" && wallet.features["solana:signTransaction"]) {
-    // Sign only; the server sends it to the agent's cluster. Wallets send on their own selected
-    // network, which is not always the one the page asks for.
+    next = await post(res.links.next.href, { account: account.address, signature: base58(out.signature), data: res.data, state: res.state });
+  } else if (res.type === "transaction" && wallet.features["solana:signTransaction"] && //confirm$/.test(res.links.next.href)) {
+    // Sign only; the server sends it to the right cluster (wallets send on their own network).
     status("Approve the transaction in " + wallet.name + "…");
     const [out] = await wallet.features["solana:signTransaction"].signTransaction({ account, chain: CHAIN, transaction: fromBase64(res.transaction) });
     status("Signed. Sending and confirming…");
-    done = await post(ACTION + "/submit", { account: account.address, transaction: toBase64(out.signedTransaction) });
+    next = await post(res.links.next.href.replace(//confirm$/, "/submit"), { account: account.address, transaction: toBase64(out.signedTransaction) });
   } else if (res.type === "transaction") {
     status("Approve the transaction in " + wallet.name + " (" + CHAIN + ")…");
     const [out] = await wallet.features["solana:signAndSendTransaction"].signAndSendTransaction({ account, chain: CHAIN, transaction: fromBase64(res.transaction) });
     status("Sent. Confirming…");
-    done = await post(res.links.next.href, { account: account.address, signature: base58(out.signature) });
+    next = await post(res.links.next.href, { account: account.address, signature: base58(out.signature) });
   } else {
     throw new Error("Unsupported action type: " + res.type);
   }
-  $("title").textContent = done.title; $("desc").textContent = done.description;
-  $("go").textContent = done.label; $("go").disabled = true; status("Done. You can close this tab.");
+  status("");
+  render(next); // a chained step (e.g. "Step 2 of 2") or the completed state
 }
 
 load().catch((e) => status(e.message || String(e), true));

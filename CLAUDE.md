@@ -43,7 +43,7 @@ The Foundation gave Solana allowances. syndromí turns them into safe, governabl
 - `@solana/actions` (depends on web3.js v1) isolated inside `apps/server` only. Do not leak web3.js v1 types into `packages/core`.
 - LLM: provider-agnostic interface. Implement Anthropic (BYOK) and one OpenAI-compatible endpoint (for open models).
 - Tools follow an MCP-compatible shape (`name`, `description`, `inputSchema`) plus a permission manifest: `kind: "read" | "write"`. Only `write` tools may produce transactions, and they only return **unsigned** transactions to the policy signer.
-- Prices: a `PriceSource` in `packages/core`. Keyless Jupiter Price API v3 by default; Pyth Hermes when `PYTH_API_KEY` is set (Hermes has required a key since the Aug 26, 2026 Pyth Core upgrade). Swaps: Jupiter Swap API v2 `/build`.
+- Prices: a `PriceSource` in `packages/core`. Keyless Jupiter Price API v3 by default. When `PYTH_API_KEY` is set, Pyth Hermes goes first and Jupiter fills any gap per request (Hermes has required a key since the Aug 26, 2026 Pyth Core upgrade; our key is a 14-day trial from Sep 29 and lacks the mSOL feed). Swaps: Jupiter Swap API v2 `/build`, with `maxAccounts` stepped down when a route won't fit in 1232 bytes.
 - Server: Fastify or Hono. Persistence: SQLite (better-sqlite3 or drizzle).
 - Dashboard: Next.js + Phantom Connect.
 - Telegram: grammY.
@@ -78,6 +78,8 @@ scripts/
 name: yield-scout
 runtime: hosted            # or local
 model: byok:anthropic      # or openai-compatible:<url>
+model_id: claude-sonnet-5  # required for openai-compatible, e.g. gemini-3.8-flash
+api_key_env: ANTHROPIC_API_KEY  # name of the env var holding the key, never the key
 schedule: "*/15 * * * *"
 allowance: { mint: USDC, amount: 50, period: weekly }
 fee_budget: { sol: 0.02 }

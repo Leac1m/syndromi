@@ -54,15 +54,17 @@ Each day has a goal, tasks, a "done when" check, and a kickoff prompt to paste i
 
 **Goal:** a local agent that thinks, reads prices, and proposes a swap.
 
-- [ ] Tool interface (MCP-compatible shape + `kind: read|write`). Write tools return unsigned transactions only.
-- [ ] Tools: `pyth-price`, `balances`, `jupiter-quote`, `jupiter-swap`, `pull-allowance`, `request-topup`, `propose-tx`.
-- [ ] LLM providers: Anthropic (BYOK) + one OpenAI-compatible endpoint.
-- [ ] Agent loop: load manifest + prompt → run tools → route any transaction through the policy signer → log every step to a structured activity log.
-- [ ] Scheduler (cron string from the manifest).
-- [ ] CLI: `syndromi init <template>`, `syndromi run <dir>`, `syndromi revoke --all`.
-- [ ] Templates: `dca-agent`, `yield-scout` (proposes USDC → a liquid staking token as the "yield" move).
+- [x] Tool interface (MCP-compatible shape + `kind: read|write`). Write tools return unsigned transactions only. _(Tools build with a noop agent signer; the policy signer strips embedded signers and signs only with the agent key.)_
+- [x] Tools: `pyth-price`, `balances`, `jupiter-quote`, `jupiter-swap`, `pull-allowance`, `request-topup`, `propose-tx`. _(`pyth-price` uses the PriceSource: Pyth, then Jupiter. `request-topup` returns an approval request, not a transaction.)_
+- [x] LLM providers: Anthropic (BYOK) + one OpenAI-compatible endpoint. _(Gemini tested live. Anthropic is unit-tested with mocks only, since there's no key yet. Manifest gains `model_id` and `api_key_env`.)_
+- [x] Agent loop: load manifest + prompt → run tools → route any transaction through the policy signer → log every step to a structured activity log. _(Drafts and top-up requests go to a file-based `ApprovalGateway`; Day 4's server implements the same interface. Executing an approved draft is deferred to Day 4.)_
+- [x] Scheduler (cron string from the manifest). _(croner, with overlapping runs skipped.)_
+- [x] CLI: `syndromi init <template>`, `syndromi run <dir>`, `syndromi revoke --all`. _(Also `fund` (the owner side of agent creation) and `status`, plus `run --once` and `--model`. Run with `pnpm syndromi …`; `--fork` or `--mainnet` (typed confirmation).)_
+- [x] Templates: `dca-agent`, `yield-scout` (proposes USDC → a liquid staking token as the "yield" move).
 
 **Done when:** `syndromi run templates/dca-agent` pulls its allowance and executes a small DCA (Surfpool fork), and `yield-scout` produces a draft that the policy marks `needs_approval`.
+
+_Done (Sep 29), on the Surfpool fork with live Gemini: dca-agent pulled 3 USDC and swapped them for SOL (both ALLOW, sent); yield-scout pulled 15 USDC and proposed 15 USDC → JitoSOL, marked NEEDS_APPROVAL ($15 > $10), with a draft written and nothing sent. The injection fixture (`fixtures/injection/`) is blocked in `loop.test.ts`. 80 tests. See `docs/architecture.md` for the Day 3 gotchas: Surfpool stalls, the Jupiter size limit, and Gemini's free-tier quota of 20 requests per day per model._
 
 > **Kickoff prompt:** Day 3. Build packages/tools, packages/runtime, and packages/cli. Keep the LLM strictly away from signing: tools return unsigned txs, the policy signer decides. Get `syndromi run templates/dca-agent` working end to end before touching the yield scout.
 

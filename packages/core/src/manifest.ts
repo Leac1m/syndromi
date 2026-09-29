@@ -36,6 +36,13 @@ export const manifestSchema = z
     model: z.string().regex(/^(byok:anthropic|openai-compatible:https?:\/\/\S+)$/, {
       error: 'must be "byok:anthropic" or "openai-compatible:<https url>"',
     }),
+    /** Model name at the provider; required for openai-compatible endpoints. */
+    model_id: z.string().min(1).optional(),
+    /** Name of the env var holding the provider key (never the key itself). */
+    api_key_env: z
+      .string()
+      .regex(/^[A-Z][A-Z0-9_]*$/, { error: "must be an env var name, e.g. GEMINI_API_KEY" })
+      .optional(),
     schedule: z.string().refine((s) => s.trim().split(/\s+/).length === 5, {
       error: 'must be a 5-field cron expression, e.g. "*/15 * * * *"',
     }),
@@ -56,6 +63,13 @@ export const manifestSchema = z
   })
   .strict()
   .superRefine((m, ctx) => {
+    if (m.model.startsWith("openai-compatible:") && !m.model_id) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["model_id"],
+        message: "is required for openai-compatible models, e.g. gemini-3.8-flash",
+      });
+    }
     const { approve_above_usd, max_tx_usd } = m.permissions;
     if (approve_above_usd > max_tx_usd) {
       ctx.addIssue({

@@ -2,6 +2,8 @@
 name: dca-agent
 runtime: local
 model: openai-compatible:https://generativelanguage.googleapis.com/v1beta/openai
+model_id: gemini-3.8-flash
+api_key_env: GEMINI_API_KEY
 schedule: "0 9 * * *"
 allowance: { mint: USDC, amount: 20, period: weekly }
 fee_budget: { sol: 0.02 }

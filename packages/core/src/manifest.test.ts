@@ -86,4 +86,13 @@ describe("parseManifest", () => {
       /model must be "byok:anthropic" or "openai-compatible:<https url>"/,
     );
   });
+
+  it("needs a model_id for openai-compatible models, and api_key_env must name a variable", () => {
+    const openai = valid.replace("byok:anthropic", "openai-compatible:https://example.com/v1");
+    expect(errorsFor(openai).join("\n")).toMatch(/model_id is required for openai-compatible/);
+    expect(parseManifest(`${openai}\nmodel_id: some-model\n`).ok).toBe(true);
+    expect(errorsFor(`${valid}\napi_key_env: sk-live-123\n`).join("\n")).toMatch(
+      /api_key_env must be an env var name/,
+    );
+  });
 });

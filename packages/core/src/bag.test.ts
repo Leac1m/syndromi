@@ -13,6 +13,7 @@ import {
   recurringRemaining,
   revokeAll,
 } from "./bag.js";
+import { signAndSend } from "./send.js";
 
 describe("recurringRemaining", () => {
   const d = {
@@ -77,8 +78,9 @@ describe.skipIf(!surfpoolUp)("bag on a Surfpool fork", () => {
       .use(signer(agentSigner))
       .use(solanaRpc({ rpcUrl: SURFPOOL }))
       .use(subscriptionsProgram());
+    // Our send path (see send.ts): kit's plugin sendTransaction is unreliable on Surfpool.
     const send = (client: typeof owner | typeof agent, ixs: Instruction[]) =>
-      client.sendTransaction(ixs);
+      signAndSend(client.rpc, client.payer, ixs);
 
     // The owner's bag holds 1,000 USDC; the Subscription Authority is set up once per mint.
     const mint = USDC;
@@ -140,7 +142,7 @@ describe.skipIf(!surfpoolUp)("bag on a Surfpool fork", () => {
     expect(views.find((v) => v.address === topUp.address)?.remaining).toBe(2_000_000n);
 
     // Kill switch: every delegation revoked (hard: token approval cleared too); pulls fail.
-    await owner.sendTransactions(await revokeAll(owner, { hard: true }));
+    await send(owner, await revokeAll(owner, { hard: true }));
     expect(await listDelegations(owner.rpc, ownerSigner.address)).toEqual([]);
     await expect(
       send(agent, await pullAllowance(agent, { owner: ownerSigner.address, mint, amount: 1n })),

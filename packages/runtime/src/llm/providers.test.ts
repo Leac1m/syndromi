@@ -9,8 +9,15 @@ const reply = (body: unknown) =>
   vi.fn((_url: string | URL | Request, _init?: RequestInit) =>
     Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response),
   );
+const sentInit = (fetch: ReturnType<typeof reply>, call = 0) => {
+  const init = fetch.mock.calls[call]?.[1];
+  if (!init) throw new Error(`no request #${call}`);
+  return init;
+};
 const sentBody = (fetch: ReturnType<typeof reply>, call = 0) =>
-  JSON.parse(String((fetch.mock.calls[call]?.[1] as RequestInit).body));
+  JSON.parse(String(sentInit(fetch, call).body));
+const sentHeaders = (fetch: ReturnType<typeof reply>) =>
+  sentInit(fetch).headers as Record<string, string>;
 
 describe("openai-compatible provider", () => {
   const manifest = {
@@ -41,9 +48,8 @@ describe("openai-compatible provider", () => {
       { id: "call_1", name: "balances", input: {} },
       { id: "call_2", name: "pyth-price", input: "{bad" },
     ]);
-    const [url, init] = fetch.mock.calls[0] ?? [];
-    expect(url).toBe("https://example.com/v1/chat/completions");
-    expect((init?.headers as Record<string, string>).authorization).toBe("Bearer k");
+    expect(fetch.mock.calls[0]?.[0]).toBe("https://example.com/v1/chat/completions");
+    expect(sentHeaders(fetch).authorization).toBe("Bearer k");
     expect(sentBody(fetch).tools[0].function.name).toBe("balances");
 
     await convo.send({ toolResults: [{ id: "call_1", name: "balances", content: "{}" }] });
@@ -101,8 +107,7 @@ describe("anthropic provider", () => {
     const first = sentBody(fetch);
     expect(first.system).toBe("system prompt");
     expect(first.tools[0]).toMatchObject({ name: "balances", input_schema: { type: "object" } });
-    const init = fetch.mock.calls[0]?.[1] as RequestInit;
-    expect((init.headers as Record<string, string>)["x-api-key"]).toBe("a");
+    expect(sentHeaders(fetch)["x-api-key"]).toBe("a");
 
     await convo.send({ toolResults: [{ id: "tu_1", name: "balances", content: "{}" }] });
     const second = sentBody(fetch, 1);

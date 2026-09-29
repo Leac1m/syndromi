@@ -1,6 +1,6 @@
 import type { ToolDescriptor } from "@syndromi/tools";
 import { describe, expect, it, vi } from "vitest";
-import { createProvider } from "./index.js";
+import { createProvider, modelOverride } from "./index.js";
 
 const tools: ToolDescriptor[] = [
   { name: "balances", description: "wallet balances", inputSchema: { type: "object" } },
@@ -134,26 +134,44 @@ describe("anthropic provider", () => {
   });
 });
 
-const live = process.env.GEMINI_API_KEY ? it : it.skip;
-describe("live Gemini (skipped without GEMINI_API_KEY)", () => {
-  live(
-    "calls a tool, takes the result, and answers",
-    async () => {
-      const provider = createProvider({
-        model: "openai-compatible:https://generativelanguage.googleapis.com/v1beta/openai",
-        model_id: "gemini-3.8-flash",
-        api_key_env: "GEMINI_API_KEY",
-      });
-      const convo = provider.start("Always call the balances tool before answering.", tools);
-      const first = await convo.send({ user: "How much SOL do I have?" });
-      const call = first.toolCalls[0];
-      expect(call?.name).toBe("balances");
-      if (!call) return;
-      const second = await convo.send({
-        toolResults: [{ id: call.id, name: call.name, content: '{"SOL": 1.5}' }],
-      });
-      expect(second.text).toMatch(/1\.5/);
-    },
-    180_000,
-  );
+describe("modelOverride", () => {
+  it("maps presets to verified endpoints and keeps bare ids on the manifest's provider", () => {
+    expect(modelOverride("nvidia:meta/muse-glimmer-30b")).toEqual({
+      model: "openai-compatible:https://integrate.api.nvidia.com/v1",
+      api_key_env: "NVIDIA_API_KEY",
+      model_id: "meta/muse-glimmer-30b",
+    });
+    expect(modelOverride("anthropic:claude-sonnet-5")).toMatchObject({ model: "byok:anthropic" });
+    expect(modelOverride("gemini-3.7-flash")).toEqual({ model_id: "gemini-3.7-flash" });
+    expect(() => modelOverride("gemini:")).toThrow(/missing model id/);
+  });
 });
+
+// Opt-in live checks, one per test provider: a tool call, then an answer using its result.
+const liveProviders = [
+  { name: "NVIDIA", key: "NVIDIA_API_KEY", spec: "nvidia:meta/muse-glimmer-30b" },
+  { name: "Gemini", key: "GEMINI_API_KEY", spec: "gemini:gemini-3.8-flash" },
+];
+for (const p of liveProviders) {
+  const live = process.env[p.key] ? it : it.skip;
+  describe(`live ${p.name} (skipped without ${p.key})`, () => {
+    live(
+      "calls a tool, takes the result, and answers",
+      async () => {
+        const provider = createProvider({
+          ...(modelOverride(p.spec) as { model: string; model_id: string; api_key_env: string }),
+        });
+        const convo = provider.start("Always call the balances tool before answering.", tools);
+        const first = await convo.send({ user: "How much SOL do I have?" });
+        const call = first.toolCalls[0];
+        expect(call?.name).toBe("balances");
+        if (!call) return;
+        const second = await convo.send({
+          toolResults: [{ id: call.id, name: call.name, content: '{"SOL": 1.5}' }],
+        });
+        expect(second.text).toMatch(/1\.5/);
+      },
+      180_000,
+    );
+  });
+}

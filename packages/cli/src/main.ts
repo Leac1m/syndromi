@@ -14,7 +14,8 @@ const HELP = `syndromi <command>
 
   init <template|dir> [--dir <path>]   copy a template and create the agent's encrypted key
   fund <dir>                           owner: send the fee budget and grant the allowance
-  run <dir> [--once] [--max-steps n] [--model id]   run now (--once) or on the manifest schedule
+  run <dir> [--once] [--max-steps n] [--model [nvidia|gemini|anthropic:]id]
+                                       run now (--once) or on the manifest schedule
   status                               list the bag's delegations and what is left
   revoke --all | --agent <name> [--hard]   kill switch: revoke delegations
 

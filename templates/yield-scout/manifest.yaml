@@ -1,9 +1,9 @@
 # Looks for a better yield (e.g. USDC → a liquid staking token) and drafts the move. Hosted.
 name: yield-scout
 runtime: hosted
-model: openai-compatible:https://generativelanguage.googleapis.com/v1beta/openai
-model_id: gemini-3.8-flash
-api_key_env: GEMINI_API_KEY
+model: openai-compatible:https://integrate.api.nvidia.com/v1
+model_id: meta/muse-glimmer-30b
+api_key_env: NVIDIA_API_KEY
 schedule: "*/15 * * * *"
 allowance: { mint: USDC, amount: 50, period: weekly }
 fee_budget: { sol: 0.02 }

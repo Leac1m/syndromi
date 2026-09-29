@@ -6,6 +6,7 @@ import {
   createProvider,
   fileSink,
   LocalApprovalGateway,
+  modelOverride,
   prepareAgent,
   runOnce,
   schedule,
@@ -24,7 +25,9 @@ export async function run(
   const loaded = await loadAgentDir(dir);
   const { prompt } = loaded;
   // --model swaps the model id for this run only (e.g. when a free-tier quota runs out).
-  const manifest = opts.model ? { ...loaded.manifest, model_id: opts.model } : loaded.manifest;
+  const manifest = opts.model
+    ? { ...loaded.manifest, ...modelOverride(opts.model) }
+    : loaded.manifest;
   const config = await readAgentConfig(manifest.name, env);
   if (!config.owner)
     throw new CliError(`agent "${manifest.name}" has no allowance yet; run: syndromi fund ${dir}`);

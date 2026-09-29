@@ -14,12 +14,14 @@
     "spike:delegation": "pnpm --filter @syndromi/scripts spike:delegation",
     "spike:jupiter": "pnpm --filter @syndromi/scripts spike:jupiter",
     "spike:swig": "pnpm --filter @syndromi/scripts spike:swig",
-    "demo:core": "pnpm --filter @syndromi/scripts demo:core"
+    "demo:core": "pnpm --filter @syndromi/scripts demo:core",
+    "syndromi": "tsx --env-file-if-exists=.env packages/cli/src/main.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
     "@types/node": "^24.0.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.2",
+    "tsx": "^4.23.15"
   }
 }

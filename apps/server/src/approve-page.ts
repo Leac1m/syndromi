@@ -45,6 +45,7 @@ const page = (cfg: { actionPath: string; chain: string; owner: string }) => `<!d
 <body><main class="card">
   <div class="head"><img id="icon" alt=""><h1 id="title">Loading…</h1></div>
   <p id="desc"></p>
+  <p id="network" hidden></p>
   <pre id="signing" hidden></pre>
   <button id="go" disabled>…</button>
   <div class="status" id="status"></div>
@@ -87,6 +88,11 @@ async function load() {
   if (!res.ok) { $("title").textContent = "Unavailable"; status(a.message || "Not found", true); return; }
   $("icon").src = a.icon; $("title").textContent = a.title; $("desc").textContent = a.description;
   const link = (a.links && a.links.actions && a.links.actions[0]) || { href: ACTION, label: a.label };
+  // Wallets sign and send on their own selected network, whatever chain the page asks for.
+  if (link.type === "transaction" && CHAIN !== "solana:mainnet") {
+    $("network").hidden = false;
+    $("network").textContent = "Switch your wallet to Solana Devnet first (Phantom: Settings → Developer settings → Testnet mode → Devnet). On mainnet this account has no SOL for fees.";
+  }
   $("go").textContent = a.disabled ? a.label : link.label;
   $("go").disabled = !!a.disabled;
   $("go").onclick = () => approve(link.href).catch((e) => { status(e.message || String(e), true); $("go").disabled = false; });

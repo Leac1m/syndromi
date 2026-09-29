@@ -1,0 +1,24 @@
+{
+  "name": "syndromi",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.5.1",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "spike:delegation": "pnpm --filter @syndromi/scripts spike:delegation",
+    "spike:jupiter": "pnpm --filter @syndromi/scripts spike:jupiter",
+    "spike:swig": "pnpm --filter @syndromi/scripts spike:swig"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  }
+}

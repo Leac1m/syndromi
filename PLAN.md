@@ -10,7 +10,7 @@ Each day has a goal, tasks, a "done when" check, and a kickoff prompt to paste i
 ## Day 0 (today, Sep 28): setup, 1–2 hours
 
 - [x] Every team member registers individually on colosseum.com.
-- [ ] Create the GitHub repo (public, MIT or Apache-2.0). Add `CLAUDE.md` and `PLAN.md` at the root.
+- [x] Create the GitHub repo (public, MIT or Apache-2.0). Add `CLAUDE.md` and `PLAN.md` at the root. _(https://github.com/Leac1m/syndromi, MIT.)_
 - [x] Install: Node 20+, pnpm, Solana CLI, Surfpool. _(Node 24.20, pnpm 12.5.1, solana-cli 4.3.0, surfpool 1.6.0. Solana CLI added to PATH in `~/.bashrc`.)_
 - [x] Two Phantom accounts on devnet: `owner` and `demo-viewer`. Airdrop devnet SOL.
 - [x] Get an RPC key (Helius free tier is enough) and an LLM API key. _(Both verified: Helius devnet `getHealth` → ok; `GEMINI_API_KEY` answers via Gemini's OpenAI-compatible endpoint with `gemini-3.8-flash`.)_

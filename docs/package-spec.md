@@ -22,6 +22,11 @@ The same directory runs in two places:
 | Schedule | the CLI process runs `schedule` | the server runs `schedule` (or only **Run now**) |
 | Runtime | `runOnce` from `@syndromi/runtime` | the same `runOnce`, inside the server |
 
+A third kind, `runtime: external`, has no model and no schedule: an outside MCP client is its
+brain and decides when to act, and `syndromi mcp <dir>` serves its tools (see below).
+`run` and `deploy` refuse it, with a pointer to `syndromi mcp`. Its `prompt.md` is optional
+standing guidance that the client reads with the owner's rules.
+
 The model key is never in the package: `api_key_env` names the environment variable, and the
 runtime reads it where the agent runs.
 
@@ -145,7 +150,8 @@ claude mcp add syndromi \
 
 ## Sharing a template
 
-A template is an agent package under `templates/<name>/`. The dashboard wizard lists every
+A template is an agent package under `templates/<name>/`. `mcp-agent` is the default: the
+wizard lists it first and preselects it, and `syndromi init` with no argument creates it. The dashboard wizard lists every
 valid one, shows its rule card ("dca-agent may take up to 20 USDC per week…"), and lets the
 owner edit the budget and rules before creating it. `syndromi init <name>` copies one for
 local use.

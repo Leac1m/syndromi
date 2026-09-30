@@ -11,6 +11,7 @@ import {
 } from "../context.js";
 import { CliError, type Io } from "../io.js";
 import { registrationOf, serverFrom } from "../session.js";
+import { claudeAddCommand } from "./mcp.js";
 
 export const TEMPLATES_DIR = new URL("../../../../templates/", import.meta.url).pathname;
 
@@ -75,6 +76,13 @@ export async function init(
     io.print(`server  registered; fund it from the dashboard (or: syndromi fund ${dir})`);
   } else {
     io.print(`next    syndromi fund ${dir} [--fork]`);
+  }
+  if (manifest.runtime === "external") {
+    io.print("");
+    io.print("Connect it to Claude Code (or any MCP client) once it is funded:");
+    io.print(
+      `  ${claudeAddCommand({ name: manifest.name, dir, ...(opts.server ? { server: opts.server } : {}), ...(opts.cluster ? { cluster: opts.cluster } : {}) })}`,
+    );
   }
   return { dir, name: manifest.name, address: keypair.signer.address };
 }

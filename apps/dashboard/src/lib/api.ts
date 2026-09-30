@@ -6,7 +6,7 @@ export type AgentView = {
   name: string;
   address: string;
   cluster: string;
-  runtime: "local" | "hosted";
+  runtime: "local" | "hosted" | "external";
   allowance?: { mint: string; amount: number; period: string };
   feeBudgetSol?: number;
   ruleCard: string[];
@@ -46,6 +46,7 @@ export type Template = {
   name: string;
   manifest: Record<string, unknown> & {
     name: string;
+    runtime: "local" | "hosted" | "external";
     allowance: { mint: string; amount: number; period: string };
     permissions: {
       programs: string[];

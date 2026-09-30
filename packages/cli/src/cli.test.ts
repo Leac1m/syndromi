@@ -31,7 +31,7 @@ describe("syndromi CLI", () => {
   it("prints help, and rejects unknown commands and conflicting clusters", async () => {
     const io = fakeIo();
     await main([], io, {});
-    expect(io.lines.join("\n")).toMatch(/init <template\|dir>/);
+    expect(io.lines.join("\n")).toMatch(/init \[template\|dir\]/);
     await expect(main(["launch"], fakeIo(), {})).rejects.toThrow(CliError);
     await expect(main(["status", "--fork", "--mainnet"], fakeIo(), {})).rejects.toThrow(
       /pick one of --fork and --mainnet/,
@@ -55,6 +55,38 @@ describe("syndromi CLI", () => {
 
     // The same agent name cannot be created twice.
     await expect(main(["init", dir], fakeIo(), env)).rejects.toThrow(/already exists/);
+  });
+
+  it("init with no argument creates the default mcp-agent and prints the Claude command", async () => {
+    const { home, env } = await tempEnv();
+    const dir = join(home, "my-claude");
+    const io = fakeIo();
+    await main(["init", "--dir", dir], io, env);
+    expect(await readFile(join(dir, "prompt.md"), "utf8")).toMatch(
+      /wallet that belongs to its owner/,
+    );
+    const agentHome = join(env.SYNDROMI_HOME, "agents", "mcp-agent");
+    expect(JSON.parse(await readFile(join(agentHome, "agent.json"), "utf8"))).toMatchObject({
+      name: "mcp-agent",
+    });
+    const out = io.lines.join("\n");
+    expect(out).toMatch(/claude mcp add syndromi-mcp-agent .*syndromi mcp /);
+    expect(out).toContain("pnpm --silent");
+  });
+
+  it("run and deploy refuse an external agent and point at syndromi mcp", async () => {
+    const { home, env } = await tempEnv();
+    const dir = join(home, "ext");
+    await main(["init", "mcp-agent", "--dir", dir], fakeIo(), env);
+    await expect(main(["run", dir, "--once"], fakeIo(), env)).rejects.toThrow(
+      /external agent: an MCP client is its brain. Start it with: syndromi mcp/,
+    );
+    await expect(
+      main(["deploy", dir, "--server", "http://127.0.0.1:1"], fakeIo(), {
+        ...env,
+        SYNDROMI_SERVER_TOKEN: "x",
+      }),
+    ).rejects.toThrow(/cannot be hosted/);
   });
 
   it("refuses mainnet without a typed confirmation, before touching the owner wallet", async () => {

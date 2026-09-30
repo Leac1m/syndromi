@@ -27,6 +27,14 @@ describe("ruleCard", () => {
     ]);
   });
 
+  it("says who drives an external agent", () => {
+    const card = ruleCard(manifest("mcp-agent"));
+    expect(card[0]).toBe(
+      "mcp-agent may take up to 5 USDC per week from your bag. The limit is enforced onchain.",
+    );
+    expect(card.at(-2)).toMatch(/^An outside agent \(an MCP client such as Claude\) decides/);
+  });
+
   it("describes local agents and explicit destinations", () => {
     const m = manifest("dca-agent");
     const card = ruleCard({

@@ -229,7 +229,10 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
   owner.post("/agents/:name/run", (c) => {
     const agent = store.agent(c.req.param("name"));
     if (!agent || agent.owner !== c.get("owner")) return c.json({ error: "no such agent" }, 404);
-    if (agent.runtime !== "hosted") return c.json({ error: `${agent.name} runs locally` }, 409);
+    if (agent.runtime !== "hosted") {
+      const where = agent.runtime === "external" ? "is driven by an MCP client" : "runs locally";
+      return c.json({ error: `${agent.name} ${where}` }, 409);
+    }
     if (!ctx.hosted)
       return c.json({ error: "hosted runtime is off (set SYNDROMI_HOSTED_SECRET)" }, 503);
     const started = ctx.hosted.runNow(agent.name);
@@ -398,16 +401,21 @@ export function publicAgent(a: AgentRecord) {
 export async function loadTemplates() {
   const names = await readdir(TEMPLATES_DIR).catch(() => [] as string[]);
   const templates = [];
-  for (const name of names.sort()) {
+  // The default template (for agents you already have) comes first in the wizard.
+  const ordered = names.sort(
+    (a, b) => Number(b === "mcp-agent") - Number(a === "mcp-agent") || a.localeCompare(b),
+  );
+  for (const name of ordered) {
     const yaml = await readFile(join(TEMPLATES_DIR, name, "manifest.yaml"), "utf8").catch(
       () => undefined,
     );
     if (!yaml) continue;
     const parsed = parseManifest(yaml, `${name}/manifest.yaml`);
     if (!parsed.ok) continue;
-    const prompt = await readFile(join(TEMPLATES_DIR, name, parsed.manifest.prompt), "utf8").catch(
-      () => "",
-    );
+    const { prompt: promptFile } = parsed.manifest;
+    const prompt = promptFile
+      ? await readFile(join(TEMPLATES_DIR, name, promptFile), "utf8").catch(() => "")
+      : "";
     templates.push({
       name,
       manifest: parsed.manifest,

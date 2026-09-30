@@ -103,6 +103,14 @@ describe("owner-scoped data", () => {
     }[];
     const scout = templates.find((t) => t.name === "yield-scout");
     expect(scout?.ruleCard[0]).toMatch(/up to 50 USDC per week/);
+    // The default template, for agents you already have, leads the wizard; it cannot be hosted.
+    expect(templates[0]?.name).toBe("mcp-agent");
+    expect(templates[0]?.manifest.runtime).toBe("external");
+    const hostedExternal = await req("/owner/agents", {
+      token,
+      body: { template: "mcp-agent", cluster: "devnet", manifest: templates[0]?.manifest },
+    });
+    expect(hostedExternal.status).toBe(400);
 
     const created = await req("/owner/agents", {
       token,

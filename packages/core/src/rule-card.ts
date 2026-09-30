@@ -39,7 +39,9 @@ export function ruleCard(m: RuleCardInput): string[] {
     lines.push(
       m.runtime === "hosted"
         ? "It runs hosted by syndromi, which holds its key."
-        : "It runs on your machine, with its key encrypted there.",
+        : m.runtime === "external"
+          ? "An outside agent (an MCP client such as Claude) decides what to do; its key stays encrypted on your machine, and every action passes these rules."
+          : "It runs on your machine, with its key encrypted there.",
     );
   }
   lines.push("You can revoke it at any time with the kill switch.");

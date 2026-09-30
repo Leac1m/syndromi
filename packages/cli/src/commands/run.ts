@@ -14,8 +14,8 @@ import {
   runOnce,
   schedule,
 } from "@syndromi/runtime";
-import { confirmMainnet, type Env } from "../context.js";
-import type { Io } from "../io.js";
+import { confirmMainnet, type Env, loadAgentDir } from "../context.js";
+import { CliError, type Io } from "../io.js";
 import { openAgent, serverFrom } from "../session.js";
 
 export const WATCH_EVERY_MS = 5_000;
@@ -30,6 +30,13 @@ export async function run(
   io: Io,
   env: Env,
 ) {
+  const { manifest: declared } = await loadAgentDir(dir);
+  if (declared.runtime === "external" || !declared.schedule) {
+    throw new CliError(
+      `${declared.name} is an external agent: an MCP client is its brain. Start it with: syndromi mcp ${dir}`,
+    );
+  }
+  const cron = declared.schedule;
   const session = await openAgent(dir, opts, io, env);
   const { manifest, agent, tools, home } = session;
   await confirmMainnet(opts.cluster, io, `run agent ${manifest.name}, which may send transactions`);
@@ -85,7 +92,7 @@ export async function run(
     return once();
   }
 
-  const job = schedule(manifest.schedule, once, {
+  const job = schedule(cron, once, {
     onError: (error) => io.print(`run failed: ${(error as Error).message}`),
     onSkip: () => io.print("previous run still in progress; skipping this tick"),
   });
@@ -102,7 +109,7 @@ export async function run(
       }, WATCH_EVERY_MS)
     : undefined;
   io.print(
-    `scheduled "${manifest.schedule}"; next run ${job.next()?.toISOString()}` +
+    `scheduled "${cron}"; next run ${job.next()?.toISOString()}` +
       `${server ? "; watching for approvals every 5 s" : ""} (Ctrl+C to stop)`,
   );
   await new Promise<void>((resolve) => {

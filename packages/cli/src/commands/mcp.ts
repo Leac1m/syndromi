@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -23,11 +23,30 @@ import type { Io } from "../io.js";
 import { openAgent, serverFrom } from "../session.js";
 import { WATCH_EVERY_MS } from "./run.js";
 
+const REPO_ROOT = new URL("../../../../", import.meta.url).pathname.replace(/\/$/, "");
+
+/** The one-liner that registers an agent with Claude Code (the passphrase and token stay yours). */
+export function claudeAddCommand(opts: {
+  name: string;
+  dir: string;
+  server?: string;
+  cluster?: Cluster;
+}) {
+  const flags = [
+    opts.server ? `--server ${opts.server}` : "",
+    opts.cluster && opts.cluster !== "devnet" ? `--${opts.cluster}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const env = `-e SYNDROMI_PASSPHRASE=<your key passphrase>${opts.server ? " -e SYNDROMI_SERVER_TOKEN=<from .env>" : ""}`;
+  return `claude mcp add syndromi-${opts.name} ${env} -- pnpm --silent --dir ${REPO_ROOT} syndromi mcp ${resolve(opts.dir)}${flags ? ` ${flags}` : ""}`;
+}
+
 /** Statuses that mean "nothing was done" (an MCP client may treat them as tool errors). */
 const FAILED = new Set(["error", "failed", "not_sent"]);
 
 /** The text an MCP client is told about, so it knows the rules before it calls anything. */
-export function instructions(name: string, rules: string[]): string {
+export function instructions(name: string, rules: string[], guidance = ""): string {
   return `You are operating "${name}", a Solana agent wallet on a budget set by its owner, through syndromí.
 
 Owner rules, enforced by a policy signer you cannot bypass:
@@ -37,7 +56,7 @@ How acting works:
 - You never sign anything. Write tools return a proposal; the policy then executes it, holds it for the owner's approval, or blocks it, and tells you which.
 - A blocked or held action is final. Do not retry it with different wording, and never split an action to get under a limit.
 ${PROMPT_GUARD}- Amounts are in whole tokens (e.g. 3 USDC), and tokens are named by symbol.
-- When the allowance is used up, ask the owner once with request-topup.`;
+- When the allowance is used up, ask the owner once with request-topup.${guidance.trim() ? `\n\nThe owner's guidance:\n${guidance.trim()}` : ""}`;
 }
 
 /**
@@ -85,6 +104,7 @@ export async function mcp(
   const mcpServer = buildMcpServer({
     name: manifest.name,
     rules: ruleCard(manifest),
+    guidance: session.prompt,
     call: callOptions,
   });
 
@@ -126,7 +146,12 @@ export async function mcp(
 }
 
 /** The MCP server for one agent: its manifest's tools, each call routed through the policy. */
-export function buildMcpServer(opts: { name: string; rules: string[]; call: ToolCallOptions }) {
+export function buildMcpServer(opts: {
+  name: string;
+  rules: string[];
+  guidance?: string;
+  call: ToolCallOptions;
+}) {
   const { tools } = opts.call;
   const descriptors = tools.describe().map((descriptor, i) => ({
     ...descriptor,
@@ -134,7 +159,10 @@ export function buildMcpServer(opts: { name: string; rules: string[]; call: Tool
   }));
   const server = new Server(
     { name: `syndromi-${opts.name}`, version: "0.1.0" },
-    { capabilities: { tools: {} }, instructions: instructions(opts.name, opts.rules) },
+    {
+      capabilities: { tools: {} },
+      instructions: instructions(opts.name, opts.rules, opts.guidance),
+    },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: descriptors }));
   server.setRequestHandler(CallToolRequestSchema, async (request) => {

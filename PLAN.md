@@ -179,7 +179,7 @@ Never cut: the policy signer, the delegation flow, the injection demo, the kill 
 
 - Agent pays for a data API from its allowance via x402.
 - Swig-enforced outflow rules onchain (if the Day-1 spike said "later").
-- [x] A plugin so another agent framework can use a syndromí bag. _(Done Sep 30 as `syndromi mcp <dir>`: an MCP server over stdio. Same policy path as the loop, via the exported `callTool`; tested in `packages/cli/src/mcp.test.ts`. Not yet tried with a live client on a funded agent.)_
+- [x] A plugin so another agent framework can use a syndromí bag. _(Done Sep 30 as `syndromi mcp <dir>`: an MCP server over stdio. Same policy path as the loop, via the exported `callTool`; tested in `packages/cli/src/mcp.test.ts`. Tried live with Claude Code on devnet: `balances`, and a `request-topup` that the owner approved and the MCP process pulled. Its template `mcp-agent` (`runtime: external`: no model or schedule) is the default in the wizard and for `syndromi init`.)_
 
 ## Oct 6–12: submission
 

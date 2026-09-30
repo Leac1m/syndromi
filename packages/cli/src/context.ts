@@ -38,9 +38,12 @@ export async function loadAgentDir(dir: string) {
   const parsed = parseManifest(text, manifestPath);
   if (!parsed.ok) throw new CliError(parsed.errors.join("\n"));
   const manifest: Manifest = parsed.manifest;
-  const prompt = await readFile(join(resolve(dir), manifest.prompt), "utf8").catch(() => {
-    throw new CliError(`prompt file ${manifest.prompt} not found next to the manifest`);
-  });
+  const { prompt: promptFile } = manifest; // optional only for external agents
+  const prompt = promptFile
+    ? await readFile(join(resolve(dir), promptFile), "utf8").catch(() => {
+        throw new CliError(`prompt file ${promptFile} not found next to the manifest`);
+      })
+    : "";
   return { manifest, prompt };
 }
 

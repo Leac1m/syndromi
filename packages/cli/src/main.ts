@@ -16,10 +16,13 @@ import { watch } from "./commands/watch.js";
 import { clusterFrom, type Env } from "./context.js";
 import { CliError, type Io, terminalIo } from "./io.js";
 
+export const DEFAULT_TEMPLATE = "mcp-agent";
+
 const HELP = `syndromi <command>
 
-  init <template|dir> [--dir <path>] [--server <url> --owner <address>]
-                                          copy a template and create the agent's encrypted key;
+  init [template|dir] [--dir <path>] [--server <url> --owner <address>]
+                                          copy a template (default: mcp-agent, a wallet for Claude
+                                          or any MCP client) and create the agent's encrypted key;
                                           with a server, register it for funding in the dashboard
   fund <dir>                              owner: send the fee budget and grant the allowance
   run <dir> [--once] [--server <url>] [--max-steps n] [--model [nvidia|gemini|anthropic:]id]
@@ -64,7 +67,9 @@ export async function main(argv: string[], io: Io = terminalIo, env: Env = proce
       help: { type: "boolean", short: "h" },
     },
   });
-  const [command, target] = positionals;
+  const [command, positional] = positionals;
+  // `syndromi init` with no argument creates the default template, for an agent you already have.
+  const target = positional ?? (command === "init" ? DEFAULT_TEMPLATE : undefined);
   const cluster = clusterFrom(values);
   const needTarget = () => {
     if (!target) throw new CliError(`usage: syndromi ${command} <dir>`);

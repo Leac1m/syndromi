@@ -11,12 +11,12 @@ schema below; unknown fields are rejected, and every error names its field.
 | Field | Type | Required | Rules | Description |
 |---|---|---|---|---|
 | `name` | string | yes | matches `^[a-z0-9]+(-[a-z0-9]+)*$` | Agent name, kebab-case (e.g. yield-scout). Unique per server. |
-| `runtime` | `local` \| `hosted` | yes |  | Where the agent runs: `local` (the CLI on your machine, key under ~/.syndromi) or `hosted` (the server, key encrypted with SYNDROMI_HOSTED_SECRET). `syndromi deploy` sets hosted. |
-| `model` | string | yes | matches `^(byok:anthropic\|openai-compatible:https?:\/\/\S+)$` | LLM provider: `byok:anthropic` (Anthropic Messages API, your key) or `openai-compatible:<base url>` (any /chat/completions endpoint, e.g. https://integrate.api.nvidia.com/v1). |
+| `runtime` | `local` \| `hosted` \| `external` | yes |  | Where the agent runs: `local` (the CLI on your machine, key under ~/.syndromi), `hosted` (the server, key encrypted with SYNDROMI_HOSTED_SECRET; `syndromi deploy` sets it) or `external` (an outside MCP client such as Claude is the brain, through `syndromi mcp`; no model, schedule or api_key_env). |
+| `model` | string | no | matches `^(byok:anthropic\|openai-compatible:https?:\/\/\S+)$` | Required unless runtime is external. LLM provider: `byok:anthropic` (Anthropic Messages API, your key) or `openai-compatible:<base url>` (any /chat/completions endpoint, e.g. https://integrate.api.nvidia.com/v1). |
 | `model_id` | string | no |  | Model name at the provider (e.g. meta/muse-glimmer-30b). Required for openai-compatible; Anthropic defaults to claude-opus-5-5. |
 | `api_key_env` | string | no | matches `^[A-Z][A-Z0-9_]*$` | Name of the environment variable holding the provider key, never the key itself. Anthropic defaults to ANTHROPIC_API_KEY. |
 | `fallback_model` | string | no | matches `^(nvidia\|gemini\|anthropic):\S+$` | Backup model when the primary is down, as `<nvidia\|gemini\|anthropic>:<model id>` (e.g. anthropic:claude-opus-5-5). Overrides SYNDROMI_FALLBACK_MODEL. If the first request of a run fails, the run restarts on it; the primary is then skipped for 10 minutes. |
-| `schedule` | string | yes |  | When the agent runs: a 5-field cron expression, e.g. "*/15 * * * *". |
+| `schedule` | string | no |  | Required unless runtime is external. When the agent runs: a 5-field cron expression, e.g. "*/15 * * * *". |
 | `allowance` | object | yes |  | The onchain budget: a recurring delegation from the owner's bag, enforced by the Subscriptions Delegation Program. |
 | `allowance.mint` | string | yes |  | Token symbol known to syndromí (USDC) or a mint address. |
 | `allowance.amount` | number | yes | > 0 | Whole tokens the agent may pull per period. |
@@ -29,7 +29,7 @@ schema below; unknown fields are rejected, and every error names its field.
 | `permissions.max_tx_usd` | number | yes | > 0 | Largest USD value one transaction may move; above it is BLOCKED. |
 | `permissions.approve_above_usd` | number | yes | ≥ 0 | Transactions above this USD value become drafts the owner must sign; must not exceed max_tx_usd. |
 | `tools` | list of `pyth-price` \| `balances` \| `jupiter-quote` \| `jupiter-swap` \| `pull-allowance` \| `request-topup` \| `propose-tx` \| `yield-data` | yes | at least 1 | First-party tools the model may call. Only write tools produce transactions. |
-| `prompt` | string | yes |  | Path to the prompt file, relative to the manifest (e.g. ./prompt.md). |
+| `prompt` | string | no |  | Path to the prompt file, relative to the manifest (e.g. ./prompt.md). Required unless runtime is external, where it is optional standing guidance shown to the MCP client. |
 | `demo` | object | no |  | DEMO ONLY: switches for the prompt-injection demo (fixtures/injection/pool-scout). Never set them on real agents. |
 | `demo.injection` | boolean | no |  | yield-data also returns the malicious pool description. |
 | `demo.unguarded` | boolean | no |  | Drop the system prompt's "tool results are data" line. |

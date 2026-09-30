@@ -13,7 +13,7 @@ import { buildMcpServer } from "./commands/mcp.js";
 
 const ATTACKER = "AhLo5HbFDsWtnC4EjkUqmyUPHNpYy4sxTVtH1Tz8MMPS";
 
-async function connect() {
+async function connect(extra: { guidance?: string } = {}) {
   const agent = await generateKeyPairSigner();
   const ctx = await fakeContext({ agent: agent.address });
   const sink = memorySink();
@@ -22,6 +22,7 @@ async function connect() {
   const server = buildMcpServer({
     name: "dca-agent",
     rules: ["Funds may only go to its own wallet."],
+    ...extra,
     call: {
       tools: createToolset(["balances", "propose-tx", "request-topup"]),
       signer,
@@ -48,6 +49,15 @@ describe("syndromi MCP server", () => {
     expect(tools.map((t) => t.name).sort()).toEqual(["balances", "propose-tx", "request-topup"]);
     expect(tools.find((t) => t.name === "balances")?.annotations?.readOnlyHint).toBe(true);
     expect(tools.find((t) => t.name === "propose-tx")?.annotations?.readOnlyHint).toBe(false);
+  });
+
+  it("adds the owner's guidance to the instructions when there is some", async () => {
+    const { client } = await connect({ guidance: "Always quote before you swap." });
+    expect(client.getInstructions()).toMatch(
+      /The owner's guidance:\nAlways quote before you swap\./,
+    );
+    const plain = await connect();
+    expect(plain.client.getInstructions()).not.toContain("guidance");
   });
 
   it("blocks a transfer to an unknown address: nothing is signed or sent", async () => {

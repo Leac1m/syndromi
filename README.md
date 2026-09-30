@@ -28,7 +28,19 @@ agent budgets. syndromí adds what an owner of many agents needs on top:
 - a live activity feed;
 - one-click revocation.
 
-## Quickstart (devnet, about 60 seconds)
+## Quickstart with an agent you already have (devnet)
+
+The default template, `mcp-agent`, is a budgeted wallet for Claude, Cursor or any MCP client.
+There is no model to configure: the client is the brain.
+
+```bash
+pnpm install
+pnpm syndromi init                       # creates mcp-agent and its encrypted key
+pnpm syndromi fund templates/mcp-agent   # owner: fee budget + a 5 USDC/week allowance
+# init printed a `claude mcp add …` line; run it, restart Claude Code, and ask it to check balances
+```
+
+## Quickstart with a built-in agent (devnet, about 60 seconds)
 
 Needs Node 20+, pnpm, and a devnet wallet at `~/.config/solana/id.json` (or `OWNER_KEYPAIR`) holding
 a little devnet SOL and devnet USDC ([Circle faucet](https://faucet.circle.com)). You also need a

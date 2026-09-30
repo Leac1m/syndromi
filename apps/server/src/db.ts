@@ -14,7 +14,7 @@ export type AgentRecord = {
   allowanceMint: Address;
   rules: { maxTxUsd: number; approveAboveUsd: number; destinations: string[]; programs: string[] };
   registeredAt: string;
-  runtime?: "local" | "hosted";
+  runtime?: "local" | "hosted" | "external";
   /** As in the manifest: token symbol (or mint), amount per period, period. */
   allowance?: { mint: string; amount: number; period: "daily" | "weekly" | "monthly" };
   feeBudgetSol?: number;

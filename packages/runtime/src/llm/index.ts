@@ -103,6 +103,11 @@ function baseProvider(
     if (!value) throw new Error(`${name} is not set (manifest api_key_env). Add it to .env.`);
     return value;
   };
+  if (!manifest.model) {
+    throw new Error(
+      "this agent has no model: an external agent is driven by an MCP client (syndromi mcp)",
+    );
+  }
   if (manifest.model === "byok:anthropic") {
     const apiKey = keyFrom(manifest.api_key_env ?? "ANTHROPIC_API_KEY") as string;
     return new AnthropicProvider({

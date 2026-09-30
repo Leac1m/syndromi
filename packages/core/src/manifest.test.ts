@@ -32,7 +32,7 @@ const errorsFor = (yaml: string) => {
 };
 
 describe("parseManifest", () => {
-  it.each(["dca-agent", "yield-scout"])("accepts the %s template", (name) => {
+  it.each(["mcp-agent", "dca-agent", "yield-scout"])("accepts the %s template", (name) => {
     const result = parseManifest(template(name), `${name}/manifest.yaml`);
     expect(result.ok ? [] : result.errors).toEqual([]);
   });
@@ -47,6 +47,30 @@ describe("parseManifest", () => {
       approveAboveUsd: 10,
     });
     expect(periodSeconds(result.manifest.allowance.period)).toBe(604_800);
+  });
+
+  it("lets an external agent omit model, schedule and prompt, and rejects them if set", () => {
+    const external = valid
+      .replace("runtime: hosted", "runtime: external")
+      .replace("model: byok:anthropic\n", "")
+      .replace('schedule: "*/15 * * * *"\n', "")
+      .replace("prompt: ./prompt.md\n", "");
+    const ok = parseManifest(external);
+    expect(ok.ok ? [] : ok.errors).toEqual([]);
+    const errors = errorsFor(external.replace("fee_budget", 'schedule: "0 9 * * *"\nfee_budget'));
+    expect(errors).toEqual([
+      "yield-scout/manifest.yaml: schedule is not used by an external agent: an outside MCP client is its brain",
+    ]);
+  });
+
+  it("still requires model, schedule and prompt from local and hosted agents", () => {
+    const errors = errorsFor(
+      valid.replace("model: byok:anthropic\n", "").replace("prompt: ./prompt.md\n", ""),
+    );
+    expect(errors).toEqual([
+      "yield-scout/manifest.yaml: model is required",
+      "yield-scout/manifest.yaml: prompt is required",
+    ]);
   });
 
   it("explains an approval threshold above the cap", () => {

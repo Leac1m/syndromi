@@ -35,17 +35,18 @@ export const manifestSchema = z
       .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, { error: "must be kebab-case, e.g. yield-scout" })
       .describe("Agent name, kebab-case (e.g. yield-scout). Unique per server."),
     runtime: z
-      .enum(["local", "hosted"])
+      .enum(["local", "hosted", "external"])
       .describe(
-        "Where the agent runs: `local` (the CLI on your machine, key under ~/.syndromi) or `hosted` (the server, key encrypted with SYNDROMI_HOSTED_SECRET). `syndromi deploy` sets hosted.",
+        "Where the agent runs: `local` (the CLI on your machine, key under ~/.syndromi), `hosted` (the server, key encrypted with SYNDROMI_HOSTED_SECRET; `syndromi deploy` sets it) or `external` (an outside MCP client such as Claude is the brain, through `syndromi mcp`; no model, schedule or api_key_env).",
       ),
     model: z
       .string()
       .regex(/^(byok:anthropic|openai-compatible:https?:\/\/\S+)$/, {
         error: 'must be "byok:anthropic" or "openai-compatible:<https url>"',
       })
+      .optional()
       .describe(
-        "LLM provider: `byok:anthropic` (Anthropic Messages API, your key) or `openai-compatible:<base url>` (any /chat/completions endpoint, e.g. https://integrate.api.nvidia.com/v1).",
+        "Required unless runtime is external. LLM provider: `byok:anthropic` (Anthropic Messages API, your key) or `openai-compatible:<base url>` (any /chat/completions endpoint, e.g. https://integrate.api.nvidia.com/v1).",
       ),
     model_id: z
       .string()
@@ -75,7 +76,10 @@ export const manifestSchema = z
       .refine((s) => s.trim().split(/\s+/).length === 5, {
         error: 'must be a 5-field cron expression, e.g. "*/15 * * * *"',
       })
-      .describe('When the agent runs: a 5-field cron expression, e.g. "*/15 * * * *".'),
+      .optional()
+      .describe(
+        'Required unless runtime is external. When the agent runs: a 5-field cron expression, e.g. "*/15 * * * *".',
+      ),
     allowance: z
       .object({
         mint: z
@@ -129,7 +133,10 @@ export const manifestSchema = z
     prompt: z
       .string()
       .min(1)
-      .describe("Path to the prompt file, relative to the manifest (e.g. ./prompt.md)."),
+      .optional()
+      .describe(
+        "Path to the prompt file, relative to the manifest (e.g. ./prompt.md). Required unless runtime is external, where it is optional standing guidance shown to the MCP client.",
+      ),
     demo: z
       .object({
         injection: z
@@ -153,7 +160,25 @@ export const manifestSchema = z
   })
   .strict()
   .superRefine((m, ctx) => {
-    if (m.model.startsWith("openai-compatible:") && !m.model_id) {
+    if (m.runtime === "external") {
+      const why = "is not used by an external agent: an outside MCP client is its brain";
+      for (const key of [
+        "model",
+        "model_id",
+        "api_key_env",
+        "fallback_model",
+        "schedule",
+      ] as const) {
+        if (m[key] !== undefined) ctx.addIssue({ code: "custom", path: [key], message: why });
+      }
+    } else {
+      for (const key of ["model", "schedule", "prompt"] as const) {
+        if (m[key] === undefined) {
+          ctx.addIssue({ code: "custom", path: [key], message: "is required" });
+        }
+      }
+    }
+    if (m.model?.startsWith("openai-compatible:") && !m.model_id) {
       ctx.addIssue({
         code: "custom",
         path: ["model_id"],

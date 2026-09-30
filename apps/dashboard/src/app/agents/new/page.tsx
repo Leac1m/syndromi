@@ -17,19 +17,31 @@ export default function NewAgent() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [template, setTemplate] = useState<Template>();
   const [manifest, setManifest] = useState<Draft>();
-  const [runtime, setRuntime] = useState<"hosted" | "local">("hosted");
+  const [runtime, setRuntime] = useState<"hosted" | "local" | "external">("external");
   const [preview, setPreview] = useState<{ ok: boolean; errors?: string[]; ruleCard?: string[] }>();
   const [created, setCreated] = useState<AgentView>();
   const [error, setError] = useState<string>();
 
   useEffect(() => {
-    api.templates().then(setTemplates, (e: Error) => setError(e.message));
+    // The server lists the default template (mcp-agent) first; start with it selected.
+    api.templates().then(
+      (list) => {
+        setTemplates(list);
+        const first = list[0];
+        if (first) {
+          setTemplate(first);
+          setManifest(structuredClone(first.manifest));
+          setRuntime(first.manifest.runtime);
+        }
+      },
+      (e: Error) => setError(e.message),
+    );
   }, []);
 
   function pick(t: Template) {
     setTemplate(t);
     setManifest(structuredClone(t.manifest));
-    setRuntime(t.manifest.runtime === "local" ? "local" : "hosted");
+    setRuntime(t.manifest.runtime);
     setCreated(undefined);
   }
 
@@ -140,15 +152,17 @@ export default function NewAgent() {
                 }
               />
             </Field>
-            <Field label="Runs" wide>
-              <select
-                value={runtime}
-                onChange={(e) => setRuntime(e.target.value as "hosted" | "local")}
-              >
-                <option value="hosted">hosted by syndromi</option>
-                <option value="local">on my machine (CLI)</option>
-              </select>
-            </Field>
+            {template?.manifest.runtime !== "external" && (
+              <Field label="Runs" wide>
+                <select
+                  value={runtime}
+                  onChange={(e) => setRuntime(e.target.value as "hosted" | "local")}
+                >
+                  <option value="hosted">hosted by syndromi</option>
+                  <option value="local">on my machine (CLI)</option>
+                </select>
+              </Field>
+            )}
           </div>
         </Card>
       )}
@@ -183,7 +197,11 @@ export default function NewAgent() {
               </button>
             )
           ) : (
-            <LocalSetup name={manifest.name} template={template?.name ?? manifest.name} />
+            <LocalSetup
+              name={manifest.name}
+              template={template?.name ?? manifest.name}
+              external={runtime === "external"}
+            />
           )}
           {error && <p className="mt-2 text-sm text-bad">{error}</p>}
           {created && (
@@ -201,16 +219,35 @@ export default function NewAgent() {
   );
 }
 
-function LocalSetup({ name, template }: { name: string; template: string }) {
+function LocalSetup({
+  name,
+  template,
+  external,
+}: {
+  name: string;
+  template: string;
+  external?: boolean;
+}) {
   const app = useApp();
   const command = `pnpm syndromi init templates/${template} --server ${SERVER} --owner ${app.owner ?? "<your address>"}${app.network === "mainnet" ? " --mainnet" : app.network === "fork" ? " --fork" : ""}`;
   const { data } = usePoll(() => api.overview(app.network), 3000, [app.network]);
   const registered = useMemo(() => data?.agents.find((a) => a.name === name), [data, name]);
   if (registered) {
     return registered.funded ? (
-      <p className="text-sm text-good">
-        {name} is funded. Run it with: pnpm syndromi run templates/{template} --server {SERVER}
-      </p>
+      external ? (
+        <div className="space-y-2 text-sm">
+          <p className="text-good">{name} is funded. Connect Claude Code (or any MCP client):</p>
+          <pre className="overflow-x-auto rounded-lg bg-line p-3 text-xs">{`claude mcp add syndromi-${name} -e SYNDROMI_PASSPHRASE=<your key passphrase> -e SYNDROMI_SERVER_TOKEN=<from .env> -- pnpm --silent --dir <path to the syndromi repo> syndromi mcp templates/${template} --server ${SERVER}${app.network === "devnet" ? "" : ` --${app.network}`}`}</pre>
+          <p className="text-muted">
+            The client can use only this agent's tools, inside the rules above. Anything over the
+            approval limit comes to you to sign.
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-good">
+          {name} is funded. Run it with: pnpm syndromi run templates/{template} --server {SERVER}
+        </p>
+      )
     ) : (
       <ActionPanel path={`/actions/fund-agent/${encodeURIComponent(name)}`} />
     );

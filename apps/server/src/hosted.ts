@@ -157,7 +157,7 @@ export class HostedRuntime {
       watching: false,
       attempts: new Map(),
     };
-    if (this.opts.schedule) {
+    if (this.opts.schedule && manifest.schedule) {
       loaded.job = schedule(manifest.schedule, () => this.run(loaded), {
         onError: (e) =>
           this.opts.log?.(`hosted: ${record.name} run failed: ${(e as Error).message}`),

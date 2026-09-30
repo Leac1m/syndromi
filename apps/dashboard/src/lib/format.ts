@@ -12,6 +12,24 @@ export type FeedLine = {
   signature?: string;
 };
 
+/** What a tool call looks like from the outside, as a progress line. */
+const TOOL_PROGRESS: Record<string, string> = {
+  balances: "checking balances",
+  "pyth-price": "reading prices",
+  "jupiter-quote": "quoting a swap",
+  "jupiter-swap": "preparing a swap",
+  "pull-allowance": "pulling its allowance",
+  "request-topup": "asking for a top-up",
+  "propose-tx": "preparing a transfer",
+  "yield-data": "reading yield data",
+};
+
+const STOP_REASONS: Record<string, string> = {
+  max_steps: "step limit reached",
+  refused: "the model declined",
+  error: "an error (see above)",
+};
+
 const money = (usd: unknown) => (typeof usd === "number" ? ` ($${usd.toFixed(2)})` : "");
 
 export function feedLine(e: ActivityEvent): FeedLine | undefined {
@@ -20,6 +38,18 @@ export function feedLine(e: ActivityEvent): FeedLine | undefined {
   switch (e.type) {
     case "run_start":
       return { ...base, text: "started a run", tone: "neutral" };
+    case "tool_call":
+      return {
+        ...base,
+        text: `${TOOL_PROGRESS[String(e.name)] ?? `using ${String(e.name)}`}…`,
+        tone: "neutral",
+      };
+    case "llm_failover":
+      return {
+        ...base,
+        text: `model ${String(e.from)} failed; switched to ${String(e.to)} (${String(e.reason)})`,
+        tone: "warn",
+      };
     case "decision": {
       const verdict = String(e.verdict);
       if (verdict === "block") return undefined; // the "blocked" event says it better
@@ -48,8 +78,13 @@ export function feedLine(e: ActivityEvent): FeedLine | undefined {
       return { ...base, text: `asked for a top-up: ${String(e.summary)}`, tone: "warn" };
     case "error":
       return { ...base, text: `error: ${String(e.message)}`, tone: "bad" };
-    case "run_end":
-      return e.text ? { ...base, text: `summary: ${String(e.text)}`, tone: "neutral" } : undefined;
+    case "run_end": {
+      if (e.text) return { ...base, text: `summary: ${String(e.text)}`, tone: "neutral" };
+      const why = STOP_REASONS[String(e.reason)];
+      return why
+        ? { ...base, text: `run stopped: ${why}`, tone: "bad" }
+        : { ...base, text: "run finished", tone: "neutral" };
+    }
     case "approval": {
       const status = String(e.status);
       const tone: Tone = ["executed", "approved", "pulled", "funded"].includes(status)
@@ -69,4 +104,31 @@ export function feedLine(e: ActivityEvent): FeedLine | undefined {
     default:
       return undefined;
   }
+}
+
+export type RunStatus =
+  | { state: "waiting" }
+  | { state: "running"; run: string }
+  | { state: "finished"; run: string; text?: string }
+  | { state: "failed"; run: string; reason: string };
+
+/**
+ * Where the first run in `events` (oldest first, all after the Run now click) has got to. A run
+ * fails when it ends with reason "error"; its reason is the run's last error message.
+ */
+export function runStatus(events: ActivityEvent[]): RunStatus {
+  const start = events.find((e) => e.type === "run_start");
+  if (!start) return { state: "waiting" };
+  const run = String(start.run);
+  const mine = events.filter((e) => e.run === start.run);
+  const end = mine.find((e) => e.type === "run_end");
+  if (!end) return { state: "running", run };
+  if (end.reason === "done") {
+    return { state: "finished", run, ...(end.text ? { text: String(end.text) } : {}) };
+  }
+  const lastError = mine.findLast((e) => e.type === "error");
+  const reason = lastError
+    ? String(lastError.message)
+    : (STOP_REASONS[String(end.reason)] ?? String(end.reason));
+  return { state: "failed", run, reason };
 }

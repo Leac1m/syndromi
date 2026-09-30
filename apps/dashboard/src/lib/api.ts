@@ -80,10 +80,10 @@ export function clearSession() {
   } catch {}
 }
 
-async function call<T>(path: string, body?: unknown): Promise<T> {
+async function call<T>(path: string, body?: unknown, method?: "DELETE"): Promise<T> {
   const token = currentSession()?.token;
   const res = await fetch(`${SERVER}${path}`, {
-    method: body === undefined ? "GET" : "POST",
+    method: method ?? (body === undefined ? "GET" : "POST"),
     headers: {
       "content-type": "application/json",
       ...(token ? { authorization: `Bearer ${token}` } : {}),
@@ -135,6 +135,8 @@ export const api = {
     }),
   runNow: (name: string) =>
     call<{ started: boolean }>(`/owner/agents/${encodeURIComponent(name)}/run`, {}),
+  removeAgent: (name: string) =>
+    call<{ removed: string }>(`/owner/agents/${encodeURIComponent(name)}`, undefined, "DELETE"),
   createHosted: (template: string, cluster: Network, manifest: unknown) =>
     call<AgentView>("/owner/agents", { template, cluster, manifest }),
 };

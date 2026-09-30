@@ -29,7 +29,12 @@ export type ServerConfig = {
 export type ServerContext = {
   store: Store;
   /** The in-process hosted runtime, when SYNDROMI_HOSTED_SECRET is set (see hosted.ts). */
-  hosted?: { scan(): void; runNow(name: string): boolean; nextRun?(name: string): Date | null };
+  hosted?: {
+    scan(): void;
+    runNow(name: string): boolean;
+    nextRun?(name: string): Date | null;
+    unload?(name: string): void;
+  };
   /** What happens after each kind of owner transaction lands (see owner-tx.ts). */
   completions: Map<string, (tx: never, signature: string | undefined) => Promise<unknown>>;
   bus: Bus;

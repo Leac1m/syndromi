@@ -17,7 +17,8 @@
     "demo:core": "pnpm --filter @syndromi/scripts demo:core",
     "syndromi": "tsx --env-file-if-exists=.env packages/cli/src/main.ts",
     "server": "tsx --env-file-if-exists=.env apps/server/src/main.ts",
-    "tunnel": "bash scripts/tunnel.sh"
+    "tunnel": "bash scripts/tunnel.sh",
+    "demo:up": "bash scripts/demo-up.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",

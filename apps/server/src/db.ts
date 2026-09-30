@@ -154,6 +154,17 @@ export class Store {
     return rows.map((r) => JSON.parse(r.data) as AgentRecord);
   }
 
+  /**
+   * Remove an agent's record. A hosted key is archived under `removed/<name>/<time>`, never
+   * deleted: its wallet may still hold SOL or tokens.
+   */
+  removeAgent(name: string) {
+    this.db
+      .prepare("update hosted_keys set name = ? where name = ?")
+      .run(`removed/${name}/${new Date().toISOString()}`, name);
+    this.db.prepare("delete from agent_records where name = ?").run(name);
+  }
+
   saveHostedKey(name: string, encrypted: unknown) {
     this.db
       .prepare(

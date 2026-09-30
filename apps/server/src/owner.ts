@@ -38,7 +38,7 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
     cors({
       origin: config.dashboardOrigins,
       allowHeaders: ["authorization", "content-type"],
-      allowMethods: ["GET", "POST", "OPTIONS"],
+      allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
     }),
   );
 
@@ -234,6 +234,43 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
       return c.json({ error: "hosted runtime is off (set SYNDROMI_HOSTED_SECRET)" }, 503);
     const started = ctx.hosted.runNow(agent.name);
     return c.json({ started });
+  });
+
+  // Remove an agent the owner no longer wants. Only when nothing is delegated to it and nothing
+  // waits for approval; a hosted key is archived, not deleted (its wallet may hold funds).
+  owner.delete("/agents/:name", async (c) => {
+    const agent = store.agent(c.req.param("name"));
+    if (!agent || agent.owner !== c.get("owner")) return c.json({ error: "no such agent" }, 404);
+    const pending =
+      store.drafts({ agentName: agent.name, status: "pending" }).length +
+      store.topUps({ agentName: agent.name, status: "pending" }).length;
+    if (pending > 0) {
+      return c.json(
+        { error: `${agent.name} has ${pending} request(s) waiting; reject them first` },
+        409,
+      );
+    }
+    let live: number;
+    try {
+      const now = BigInt(Math.floor(Date.now() / 1000));
+      live = (await listDelegations(ctx.rpc(agent.cluster), agent.owner, now)).filter(
+        (d) => d.agent === agent.address && (d.kind === "allowance" || d.remaining > 0n),
+      ).length;
+    } catch (e) {
+      return c.json(
+        { error: `could not check ${agent.name}'s delegations: ${(e as Error).message}` },
+        502,
+      );
+    }
+    if (live > 0) {
+      return c.json(
+        { error: `${agent.name} still has a live allowance; revoke it first (kill switch)` },
+        409,
+      );
+    }
+    ctx.hosted?.unload?.(agent.name);
+    store.removeAgent(agent.name);
+    return c.json({ removed: agent.name });
   });
 
   app.route("/owner", owner);

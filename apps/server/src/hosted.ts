@@ -110,6 +110,12 @@ export class HostedRuntime {
     await this.run(loaded);
   }
 
+  /** Stop scheduling a removed agent. A run already in flight finishes. */
+  unload(name: string) {
+    this.agents.get(name)?.job?.stop();
+    this.agents.delete(name);
+  }
+
   nextRun(name: string): Date | null {
     return this.agents.get(name)?.job?.next() ?? null;
   }

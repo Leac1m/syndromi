@@ -12,5 +12,5 @@ permissions:
   destinations: [self]
   max_tx_usd: 10
   approve_above_usd: 5
-tools: [pyth-price, balances, jupiter-quote, jupiter-swap, pull-allowance]
+tools: [pyth-price, balances, jupiter-quote, jupiter-swap, pull-allowance, request-topup]
 prompt: ./prompt.md

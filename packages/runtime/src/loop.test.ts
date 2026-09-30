@@ -173,6 +173,38 @@ describe("runOnce", () => {
     expect(sink.events.at(-2)).toMatchObject({ type: "error", message: "HTTP 503: high demand" });
   });
 
+  it("asks the owner for a top-up when the allowance is used up", async () => {
+    const usedUp = defineTool({
+      name: "pull-allowance",
+      kind: "write",
+      description: "pull",
+      input: z.object({ amount: z.number() }),
+      run: async () => {
+        throw new Error(
+          "Your USDC allowance for this period is used up. If you need more before then, ask the owner once with request-topup.",
+        );
+      },
+    });
+    const { opts, sink, send } = await setup(
+      [
+        useTools(call("pull-allowance", { amount: 3 })),
+        (results) =>
+          results[0]?.content.includes("used up")
+            ? useTools(call("request-topup", { amount: 3, reason: "Weekly allowance used up" }))
+            : finish("unexpected"),
+        finish("Asked the owner for 3 USDC; waiting."),
+      ],
+      { ...TOOLS, "pull-allowance": usedUp },
+    );
+    const summary = await runOnce(opts);
+    expect(summary.topUps).toHaveLength(1);
+    expect(send).not.toHaveBeenCalled();
+    expect(sink.events.find((e) => e.type === "topup_requested")).toMatchObject({
+      amount: 3_000_000n,
+      reason: "Weekly allowance used up",
+    });
+  });
+
   it("switches to the backup model when the primary is down, and logs it", async () => {
     const { opts, sink } = await setup([]);
     const down = {

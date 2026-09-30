@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createToolset } from "./registry.js";
 import { fakeContext, fakeRpc, policy, SOL_MINT, USDC_MAINNET } from "./test-helpers.js";
 import { defineTool } from "./tool.js";
+import { shortfallMessage } from "./tools/pull-allowance.js";
 
 const ix = (programId: string, data = "") => ({ programId, accounts: [], data });
 const buildResponse = {
@@ -218,5 +219,40 @@ suite("yield-data", () => {
     expect(JSON.stringify(out)).toMatch(
       /migration vault AhLo5HEVqYUwdoNrEWoEXtY4X9y9jd85LCbtVw1JQVig/,
     );
+  });
+});
+
+suite("pull-allowance", () => {
+  const view = (agent: string, remaining: bigint) => ({
+    address: agent as never,
+    kind: "allowance" as const,
+    agent: agent as never,
+    mint: USDC_MAINNET,
+    limit: 5_000_000n,
+    remaining,
+    periodEndsAt: 1_790_000_000n,
+    expiresAt: 0n,
+  });
+
+  it("says how much is left, and when it resets, instead of failing onchain", async () => {
+    const ctx = await fakeContext();
+    const at = { agent: ctx.agent, allowanceMint: USDC_MAINNET };
+    expect(shortfallMessage([view(ctx.agent, 2_000_000n)], at, 2_000_000n, 6, "USDC")).toBe(
+      undefined,
+    );
+    expect(shortfallMessage([view(ctx.agent, 2_000_000n)], at, 3_000_000n, 6, "USDC")).toBe(
+      "Only 2 USDC left of your allowance this period. It resets 2026-09-21T14:13Z. " +
+        "Pull at most 2 USDC. If you need more before then, ask the owner once with request-topup.",
+    );
+    expect(shortfallMessage([view(ctx.agent, 0n)], at, 1_000_000n, 6, "USDC")).toMatch(
+      /^Your USDC allowance for this period is used up\. .*request-topup/,
+    );
+  });
+
+  it("stops an agent that has no allowance, before building anything", async () => {
+    const ctx = await fakeContext(); // fakeRpc has no delegations
+    expect(
+      await createToolset(["pull-allowance"]).call("pull-allowance", { amount: 1 }, ctx),
+    ).toMatchObject({ type: "error", error: expect.stringMatching(/No allowance is set up/) });
   });
 });

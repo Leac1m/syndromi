@@ -1,6 +1,6 @@
 # syndromí architecture
 
-Status: Day-1 decisions (backed by the spikes in `scripts/`), plus the Day-2 core, the Day-3 runtime, the Day-4 approvals, the Day-5 dashboard and the Day-6 hosted mode. Updated 2026-09-29.
+Status: Day-1 decisions (backed by the spikes in `scripts/`), plus the Day-2 core, the Day-3 runtime, the Day-4 approvals, the Day-5 dashboard, the Day-6 hosted mode and the Day-7 hardening. Updated 2026-09-30.
 
 ## Components
 
@@ -351,6 +351,31 @@ Gotchas found on Day 6:
 - **Hosted agents that share a name** conflict across clusters: names are global in the store.
 - **Quick tunnels** give a new URL on every run, which means restarting the server with a new `PUBLIC_URL`.
 
+## Hardening (Day 7)
+
+**LLM resilience** (`packages/runtime/src/llm`).
+- `anthropic.ts` uses the official `@anthropic-ai/sdk` (0.129.0):
+  - default model `claude-opus-5-5`, adaptive thinking, `output_config.effort: "medium"`, `max_tokens` 16000;
+  - server-side `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) re-runs a policy-declined request on Anthropic's recommended fallback model;
+  - a refusal that survives it ends the run with reason `refused`;
+  - assistant content (thinking blocks included) is echoed back verbatim.
+- `failover.ts` `FailoverProvider(primary, backup)`. The backup comes from the manifest's `fallback_model` or `SYNDROMI_FALLBACK_MODEL` (`<nvidia|gemini|anthropic>:<id>`).
+  - If the **first** request of a run fails, the run restarts on the backup: no tool has run yet, so nothing repeats.
+  - A mid-run failure ends the run (tools already acted on the primary's plan).
+  - Either failure benches the primary for 10 minutes.
+  - The switch is logged as `llm_failover`. A refusal is an answer, not an outage.
+- `postJson` gives each attempt 60 s and retries a timeout or an unreachable host once. Errors name the provider and model ("NVIDIA meta/muse-glimmer-30b did not respond within 60 s (2 tries)").
+
+**Feed and Run now.** Tool calls appear as progress lines ("checking balances…"), failovers as warnings, and a text-less `run_end` says how the run ended. **Run now** follows its own run (by the `run` id of the first `run_start` after the click) to Finished or Failed.
+
+**Agent-driven top-up.** `pull-allowance` reads what is left before building a pull. It uses the later of chain time and local time: a fork can run ahead, and the latest block time lags the clock, which made a just-landed delegation look not started. A short allowance comes back as a message the model can act on ("only 2 USDC left… ask the owner once with request-topup"). `dca-agent` has `request-topup` and a prompt step for it.
+
+**Housekeeping.**
+- `DELETE /owner/agents/:name` refuses while the agent has a live delegation or pending requests, or when its delegations can't be read. It archives a hosted key (`removed/<name>/<time>`) instead of deleting it.
+- `pnpm demo:up` starts the quick tunnel, waits for its URL, and starts the server with `PUBLIC_URL` set and schedules off.
+
+**Docs.** `README.md`; `docs/manifest-spec.md` is generated from `manifestSchema` (`pnpm docs:manifest`, and a test fails when it is stale); `docs/package-spec.md`.
+
 ## Local dev
 
 - `pnpm spike:delegation [--wait-reset]` runs on devnet and uses the Solana CLI wallet as owner
@@ -360,7 +385,7 @@ Gotchas found on Day 6:
 - Approvals: add `SYNDROMI_SERVER_TOKEN` to `.env` (e.g. `openssl rand -hex 24`) and run `pnpm server`. Open the printed Telegram link and press Start. Then `pnpm syndromi run <dir> --server http://127.0.0.1:8787` (or `watch <dir>`). `pnpm syndromi approve <id>` approves from the terminal with the owner's CLI key, for fork agents.
 - Dashboard: `pnpm server` (with `SYNDROMI_HOSTED_SECRET` for hosted agents), then `pnpm --filter @syndromi/dashboard dev`, and open http://localhost:3000.
 - `pnpm test` runs all unit tests. The fork tests (bag, runtime, approvals e2e) run only when Surfpool is up on
-  :8899; the live Gemini test runs only when `GEMINI_API_KEY` is exported.
+  :8899; the live provider tests (NVIDIA, Gemini, Anthropic) run only when their keys are exported.
 - Agent on the fork: `pnpm syndromi init templates/dca-agent`, then `pnpm syndromi fund
   templates/dca-agent --fork`, then `pnpm syndromi run templates/dca-agent --once --fork`.
   Set `SYNDROMI_PASSPHRASE` to skip the prompt, and `SYNDROMI_HOME` to keep test keys out of

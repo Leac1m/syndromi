@@ -62,6 +62,9 @@ export function onOwnerTxLanded(ctx: ServerContext, kind: string, completion: Co
 }
 
 const PRIORITY_MICRO_LAMPORTS = 10_000n;
+/** The simulated estimate can undershoot what the same transaction needs on chain (a revoke was
+ * estimated at ~211 units and ran out at 274), so never budget less than this. */
+const MIN_COMPUTE_UNITS = 30_000;
 
 /** Would these instructions fit in one transaction (with our compute-budget prefix)? */
 export function fitsInOneTransaction(owner: Address, instructions: Instruction[]) {
@@ -114,7 +117,7 @@ export async function issueOwnerTx(
   const transaction = compileTransaction(
     prependTransactionMessageInstructions(
       [
-        getSetComputeUnitLimitInstruction({ units: Math.min(1_400_000, Math.ceil(units * 1.3)) }),
+        getSetComputeUnitLimitInstruction({ units: Math.min(1_400_000, Math.max(MIN_COMPUTE_UNITS, Math.ceil(units * 1.3))) }),
         getSetComputeUnitPriceInstruction({ microLamports: PRIORITY_MICRO_LAMPORTS }),
       ],
       unsized,

@@ -117,7 +117,9 @@ export async function issueOwnerTx(
   const transaction = compileTransaction(
     prependTransactionMessageInstructions(
       [
-        getSetComputeUnitLimitInstruction({ units: Math.min(1_400_000, Math.max(MIN_COMPUTE_UNITS, Math.ceil(units * 1.3))) }),
+        getSetComputeUnitLimitInstruction({
+          units: Math.min(1_400_000, Math.max(MIN_COMPUTE_UNITS, Math.ceil(units * 1.3))),
+        }),
         getSetComputeUnitPriceInstruction({ microLamports: PRIORITY_MICRO_LAMPORTS }),
       ],
       unsized,

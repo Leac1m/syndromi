@@ -114,6 +114,35 @@ The rules:
 Signers that a tool embedded in the message are stripped before signing, so only the agent's
 key, held by the policy signer, can sign.
 
+## Using a syndromí agent from another agent (MCP)
+
+`syndromi mcp <dir>` serves an agent's tools over the Model Context Protocol (stdio), so an MCP
+client (Claude Code, Claude Desktop, Cursor) can act as that agent. The agent must already be
+created and funded. The client holds no key: each `tools/call` takes the same path as a call
+from our own agent loop, which is `callTool` in `packages/runtime/src/loop.ts`:
+
+1. The tool builds an unsigned proposal, or returns data.
+2. The policy signer decides. `allow` is signed and sent, `needs_approval` becomes a draft the
+   owner signs from Telegram or the dashboard, and `block` is final.
+3. The result is text for the client, with `isError` set when nothing was done.
+
+The client only sees the tools in the manifest's `tools`, and the server's `instructions` carry
+the owner's rule card. With `--server`, drafts and top-up requests go to the owner as usual and
+the server process executes them once approved.
+
+```bash
+claude mcp add syndromi \
+  -e SYNDROMI_PASSPHRASE=… -e SYNDROMI_SERVER_TOKEN=… \
+  -- pnpm --silent --dir /path/to/syndromi syndromi mcp /path/to/agent --server http://127.0.0.1:8787
+```
+
+- **stdout is the protocol.** Launch it with `pnpm --silent` (plain `pnpm` prints a banner that
+  breaks the stream) or call `tsx` directly. Logs go to stderr.
+- **The key passphrase** comes from `SYNDROMI_PASSPHRASE`, since stdio cannot prompt.
+- **Mainnet** needs `--mainnet` and `SYNDROMI_CONFIRM_MAINNET=mainnet` in the client's config,
+  the non-interactive form of the usual confirmation.
+- **Run one process per agent:** the MCP server also watches for approvals, like `syndromi run`.
+
 ## Sharing a template
 
 A template is an agent package under `templates/<name>/`. The dashboard wizard lists every

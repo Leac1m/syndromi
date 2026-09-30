@@ -78,7 +78,11 @@ export async function runOnce(opts: RunOptions): Promise<RunSummary> {
       summary.steps++;
       const results: ToolResultMessage[] = [];
       for (const call of turn.toolCalls) {
-        results.push({ id: call.id, name: call.name, content: await handle(call, opts, summary) });
+        results.push({
+          id: call.id,
+          name: call.name,
+          content: await callTool(call, opts, summary),
+        });
       }
       turn = await convo.send({ toolResults: results });
     }
@@ -98,8 +102,26 @@ export async function runOnce(opts: RunOptions): Promise<RunSummary> {
   return summary;
 }
 
-/** Runs one tool call through the policy; returns what the model sees. */
-async function handle(call: ToolCall, opts: RunOptions, summary: RunSummary): Promise<string> {
+/** What a single tool call needs: no model, so an MCP client can drive the same path. */
+export type ToolCallOptions = Pick<
+  RunOptions,
+  "tools" | "signer" | "ctx" | "log" | "approvals" | "send"
+>;
+
+/**
+ * Runs one tool call through the policy; returns what the caller (a model, or an MCP client) sees.
+ * The one path from a tool call to a signature: tool, then policy, then approval or send.
+ */
+export async function callTool(
+  call: ToolCall,
+  opts: ToolCallOptions,
+  summary: Pick<RunSummary, "sent" | "drafts" | "topUps" | "blocked"> = {
+    sent: [],
+    drafts: [],
+    topUps: [],
+    blocked: 0,
+  },
+): Promise<string> {
   const { log, ctx } = opts;
   await log.emit("tool_call", { id: call.id, name: call.name, input: call.input });
   const outcome: ToolOutcome = await opts.tools.call(call.name, call.input, ctx);

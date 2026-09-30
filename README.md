@@ -88,6 +88,13 @@ through the CLI) or **hosted** (the same runtime inside the server). See
 [`docs/manifest-spec.md`](docs/manifest-spec.md) and [`docs/package-spec.md`](docs/package-spec.md).
 Design decisions and their evidence: [`docs/architecture.md`](docs/architecture.md).
 
+## Use it from any MCP client
+
+`syndromi mcp <dir>` lets Claude, Cursor or any MCP client act as a funded agent. The client
+gets the agent's tools and the owner's rule card, never a key, and every write goes through
+the same policy signer: executed, held for the owner's signature, or blocked. See
+[`docs/package-spec.md`](docs/package-spec.md#using-a-syndromí-agent-from-another-agent-mcp).
+
 ## Security model
 
 - **The budget is enforced onchain.** An agent can only pull what its delegation allows this

@@ -155,9 +155,10 @@ _**Not yet met:** two consecutive full runs with the live model. Run 2 is pendin
 
 ## Day 7 (Oct 5): harden, document, freeze
 
-- [ ] Fix the rough-edges list from Day 6. No new features.
-- [ ] README: pitch, 60-second quickstart (`syndromi init` → `run`), architecture diagram, security model, roadmap.
-- [ ] `docs/manifest-spec.md` and `docs/package-spec.md` (the dev-community story).
+- [ ] Fix the rough-edges list from Day 6. No new features. _(Done except 9 and 10, which need the phone and a mainnet wallet. 1: tool calls show as progress lines. 2: 60 s per attempt, one retry, errors name the provider and model. 3: Run now follows its run to Finished/Failed. 4: Anthropic on the official SDK (`claude-opus-5-5`, server-side refusal fallbacks) plus `FailoverProvider` via `SYNDROMI_FALLBACK_MODEL`; a dead primary failing over to NVIDIA was checked live, and Anthropic waits for `ANTHROPIC_API_KEY`. 5: the runbook covers the labelled scripted fallback. 6: `pull-allowance` explains a shortfall and dca-agent requests its own top-up. 7: Remove agent (keys are archived, not deleted). 8: `pnpm demo:up`.)_
+- [x] README: pitch, 60-second quickstart (`syndromi init` → `run`), architecture diagram, security model, roadmap.
+- [x] `docs/manifest-spec.md` and `docs/package-spec.md` (the dev-community story). _(The manifest spec is generated from the schema (`pnpm docs:manifest`), and a test keeps it current.)_
+- [ ] Rehearsal run 2 (the Day 6 done-when), including the phone path for a message and a transaction approval.
 - [ ] Record a raw screen capture of the full demo as a safety copy.
 - [ ] Tag `v0.1.0`. **Code freeze.**
 

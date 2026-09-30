@@ -44,6 +44,16 @@ export const manifestSchema = z
       .string()
       .regex(/^[A-Z][A-Z0-9_]*$/, { error: "must be an env var name, e.g. GEMINI_API_KEY" })
       .optional(),
+    /**
+     * Backup model when the primary is down, as `<preset>:<model id>` with a preset of nvidia,
+     * gemini or anthropic (e.g. anthropic:claude-opus-5-5). Overrides SYNDROMI_FALLBACK_MODEL.
+     */
+    fallback_model: z
+      .string()
+      .regex(/^(nvidia|gemini|anthropic):\S+$/, {
+        error: "must be <nvidia|gemini|anthropic>:<model id>, e.g. anthropic:claude-opus-5-5",
+      })
+      .optional(),
     schedule: z.string().refine((s) => s.trim().split(/\s+/).length === 5, {
       error: 'must be a 5-field cron expression, e.g. "*/15 * * * *"',
     }),

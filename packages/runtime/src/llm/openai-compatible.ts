@@ -20,6 +20,20 @@ type ChatResponse = {
   }[];
 };
 
+const KNOWN_HOSTS: Record<string, string> = {
+  "integrate.api.nvidia.com": "NVIDIA",
+  "generativelanguage.googleapis.com": "Gemini",
+};
+
+/** "NVIDIA meta/muse-glimmer-30b", or the host for endpoints we don't know by name. */
+export function endpointLabel(baseUrl: string, model: string): string {
+  let host = baseUrl;
+  try {
+    host = new URL(baseUrl).host;
+  } catch {}
+  return `${KNOWN_HOSTS[host] ?? host} ${model}`;
+}
+
 export class OpenAICompatibleProvider implements LlmProvider {
   readonly name = "openai-compatible";
   constructor(
@@ -42,6 +56,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
     const headers: Record<string, string> = this.opts.apiKey
       ? { authorization: `Bearer ${this.opts.apiKey}` }
       : {};
+    const label = endpointLabel(this.opts.baseUrl, this.opts.model);
     const toolSpecs = tools.map((t) => ({
       type: "function",
       function: { name: t.name, description: t.description, parameters: t.inputSchema },
@@ -65,11 +80,11 @@ export class OpenAICompatibleProvider implements LlmProvider {
             ...(toolSpecs.length ? { tools: toolSpecs } : {}),
             max_tokens: this.opts.maxTokens ?? 2048,
           },
-          this.opts.model,
+          label,
         )) as ChatResponse;
         const choice = body.choices?.[0];
         const message = choice?.message;
-        if (!message) throw new Error(`${this.opts.model}: response had no message`);
+        if (!message) throw new Error(`${label}: response had no message`);
         messages.push(message); // verbatim, including any extra_content thought signatures
         const toolCalls = (message.tool_calls ?? []).map((c) => ({
           id: c.id,

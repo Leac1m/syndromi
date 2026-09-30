@@ -80,7 +80,8 @@ scripts/
 name: yield-scout
 runtime: hosted            # or local
 model: byok:anthropic      # or openai-compatible:<url>
-model_id: claude-sonnet-5  # required for openai-compatible, e.g. gemini-3.8-flash
+model_id: claude-opus-5-5  # required for openai-compatible, e.g. gemini-3.8-flash
+fallback_model: anthropic:claude-opus-5-5  # optional backup; else SYNDROMI_FALLBACK_MODEL
 api_key_env: ANTHROPIC_API_KEY  # name of the env var holding the key, never the key
 schedule: "*/15 * * * *"
 allowance: { mint: USDC, amount: 50, period: weekly }

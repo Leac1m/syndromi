@@ -9,7 +9,7 @@ export type ToolCall = { id: string; name: string; input: unknown };
 export type Turn = {
   text?: string;
   toolCalls: ToolCall[];
-  stop: "tool_calls" | "end" | "length" | "other";
+  stop: "tool_calls" | "end" | "length" | "refusal" | "other";
 };
 
 export type ToolResultMessage = { id: string; name: string; content: string };
@@ -19,19 +19,29 @@ export interface Conversation {
   send(input: { user: string } | { toolResults: ToolResultMessage[] }): Promise<Turn>;
 }
 
+/** Something the run's activity log should show, e.g. a switch to the backup model. */
+export type LlmNotice = { type: "llm_failover"; from: string; to: string; reason: string };
+
 export interface LlmProvider {
   readonly name: string;
   readonly model: string;
-  start(system: string, tools: ToolDescriptor[]): Conversation;
+  start(
+    system: string,
+    tools: ToolDescriptor[],
+    notify?: (notice: LlmNotice) => void | Promise<void>,
+  ): Conversation;
 }
 
 export type Fetch = typeof fetch;
 
 const ATTEMPTS = 4;
+const TIMEOUT_MS = 60_000;
+const TIMEOUT_TRIES = 2;
 
 /**
  * POST JSON with a timeout, retrying rate limits and transient server errors with backoff
- * (Gemini answers 503 "high demand" in bursts). Honours Retry-After when present.
+ * (Gemini answers 503 "high demand" in bursts) and a timeout or unreachable host once. Honours
+ * Retry-After when present. Errors name the provider and model (`label`).
  */
 export async function postJson(
   fetchImpl: Fetch,
@@ -40,13 +50,30 @@ export async function postJson(
   body: unknown,
   label: string,
 ): Promise<unknown> {
+  let networkFailures = 0;
   for (let attempt = 1; ; attempt++) {
-    const res = await fetchImpl(url, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120_000),
-    });
+    let res: Response;
+    try {
+      res = await fetchImpl(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+    } catch (error) {
+      networkFailures++;
+      const timedOut = (error as Error).name === "TimeoutError";
+      if (networkFailures < TIMEOUT_TRIES) continue;
+      if (timedOut) {
+        throw new Error(
+          `${label} did not respond within ${TIMEOUT_MS / 1000} s (${TIMEOUT_TRIES} tries)`,
+        );
+      }
+      const cause = (error as Error & { cause?: Error }).cause?.message;
+      throw new Error(
+        `${label}: cannot reach ${new URL(url).host} (${TIMEOUT_TRIES} tries): ${cause ?? (error as Error).message}`,
+      );
+    }
     if (res.ok) return res.json();
     const text = await res.text().catch(() => "");
     // A daily quota (e.g. Gemini's free tier, 20 requests/day/model) will not recover in seconds.

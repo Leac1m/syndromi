@@ -28,7 +28,7 @@ export type RunOptions = {
 
 export type RunSummary = {
   steps: number;
-  reason: "done" | "max_steps" | "error";
+  reason: "done" | "max_steps" | "refused" | "error";
   sent: Signature[];
   drafts: string[];
   topUps: string[];
@@ -55,7 +55,9 @@ export async function runOnce(opts: RunOptions): Promise<RunSummary> {
   });
 
   try {
-    const convo = provider.start(systemPrompt(opts), tools.describe());
+    const convo = provider.start(systemPrompt(opts), tools.describe(), ({ type, ...fields }) =>
+      log.emit(type, fields).then(() => undefined),
+    );
     let turn: Turn = await convo.send({
       user: opts.task ?? `Run your scheduled task now. The time is ${new Date().toISOString()}.`,
     });
@@ -63,6 +65,10 @@ export async function runOnce(opts: RunOptions): Promise<RunSummary> {
       if (turn.text) {
         summary.text = turn.text;
         await log.emit("llm", { text: turn.text });
+      }
+      if (turn.stop === "refusal") {
+        summary.reason = "refused";
+        break;
       }
       if (turn.toolCalls.length === 0) break;
       if (summary.steps >= maxSteps) {

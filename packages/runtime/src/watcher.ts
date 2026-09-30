@@ -12,6 +12,10 @@ export const MAX_DRIFT = 1.1;
 /** Passes a failing simulation is retried (with a fresh quote each time) before giving up. */
 export const SIMULATION_ATTEMPTS = 3;
 
+/** Network hiccups (RPC unreachable, timeouts) that are worth another pass; anything else is final. */
+const TRANSIENT =
+  /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket|timed? ?out/i;
+
 export type WatchResult = {
   executed: string[];
   stale: string[];
@@ -28,7 +32,7 @@ export async function executeApprovals(opts: {
   log: ActivityLog;
   send: (signed: Transaction) => Promise<Signature>;
   now?: Date;
-  /** Simulation failures per draft, kept by the caller across passes. */
+  /** Simulation failures per draft and network failures per top-up, kept by the caller across passes. */
   attempts?: Map<string, number>;
 }): Promise<WatchResult> {
   const { client, ctx, log } = opts;
@@ -161,10 +165,20 @@ export async function executeApprovals(opts: {
       });
       await client.reportTopUp(topup.id, { status: "pulled", signature });
     } catch (error) {
+      const message = (error as Error).message;
+      const tries = (opts.attempts?.get(topup.id) ?? 0) + 1;
+      opts.attempts?.set(topup.id, tries);
+      if (opts.attempts && tries < SIMULATION_ATTEMPTS && TRANSIENT.test(message)) {
+        await log.emit("error", {
+          topupId: topup.id,
+          message: `top-up ${topup.id}: ${message} (try ${tries}/${SIMULATION_ATTEMPTS}), retrying`,
+        });
+        continue;
+      }
       result.failed.push(topup.id);
       await log.emit("error", {
         topupId: topup.id,
-        message: `top-up ${topup.id}: ${(error as Error).message}`,
+        message: `top-up ${topup.id}: ${message}`,
       });
       await client.reportTopUp(topup.id, { status: "failed", error: (error as Error).message });
     }

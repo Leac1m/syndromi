@@ -37,3 +37,8 @@ pnpm-debug.log*
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# local agent copies made by `syndromi init <template>` in the repo root
+/mcp-agent/
+/dca-agent/
+/yield-scout/

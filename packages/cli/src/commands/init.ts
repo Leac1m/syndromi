@@ -33,9 +33,11 @@ export async function init(
   templatesDir = TEMPLATES_DIR,
 ) {
   let dir: string;
-  if (await exists(join(target, "manifest.yaml"))) {
+  // --dir only makes sense for a copy, so with it a template name wins over a same-named folder.
+  const isTemplate = await exists(join(templatesDir, target, "manifest.yaml"));
+  if (!(opts.dir && isTemplate) && (await exists(join(target, "manifest.yaml")))) {
     dir = target;
-  } else if (await exists(join(templatesDir, target, "manifest.yaml"))) {
+  } else if (isTemplate) {
     dir = opts.dir ?? target;
     if (await exists(dir)) throw new CliError(`${dir} already exists; pass --dir <new path>`);
     await cp(join(templatesDir, target), dir, { recursive: true });

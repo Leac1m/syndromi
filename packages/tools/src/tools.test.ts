@@ -76,6 +76,50 @@ suite("toolset", () => {
   });
 });
 
+suite("network hiccups", () => {
+  const flaky = (failures: number, error: Error) => {
+    let calls = 0;
+    const tool = defineTool({
+      name: "balances",
+      kind: "read",
+      description: "flaky",
+      input: z.object({}),
+      run: async () => {
+        calls++;
+        if (calls <= failures) throw error;
+        return { type: "data", data: { ok: true } };
+      },
+    });
+    return { toolset: createToolset(["balances"], { balances: tool }), calls: () => calls };
+  };
+  const networkError = Object.assign(new TypeError("fetch failed"), {
+    cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+  });
+
+  it("retries a tool that hits a network error, then succeeds", async () => {
+    const { toolset, calls } = flaky(2, networkError);
+    const out = await toolset.call("balances", {}, await fakeContext());
+    expect(out).toMatchObject({ type: "data" });
+    expect(calls()).toBe(3);
+  });
+
+  it("gives up after three attempts and names the real cause", async () => {
+    const { toolset, calls } = flaky(99, networkError);
+    const out = await toolset.call("balances", {}, await fakeContext());
+    expect(out).toEqual({
+      type: "error",
+      error: "balances failed: fetch failed (ECONNRESET: read ECONNRESET)",
+    });
+    expect(calls()).toBe(3);
+  });
+
+  it("does not retry a refusal", async () => {
+    const { toolset, calls } = flaky(99, new Error("unknown token"));
+    await toolset.call("balances", {}, await fakeContext());
+    expect(calls()).toBe(1);
+  });
+});
+
 suite("jupiter-swap", () => {
   it("takes the value at risk from Jupiter's inAmount, not the model's input", async () => {
     const fetch = jupiterFetch();

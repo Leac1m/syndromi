@@ -1,0 +1,14 @@
+# A budgeted wallet for an agent you already have: Claude, Cursor, or any MCP client.
+# The client is the brain and decides when to act; syndromí holds the key and the rules.
+# Connect it with `syndromi mcp <dir>` (the dashboard wizard shows the command).
+name: mcp-agent
+runtime: external
+allowance: { mint: USDC, amount: 5, period: weekly }
+fee_budget: { sol: 0.02 }
+permissions:
+  programs: [jupiter, subscriptions]
+  destinations: [self]
+  max_tx_usd: 10
+  approve_above_usd: 5
+tools: [balances, pyth-price, jupiter-quote, jupiter-swap, pull-allowance, request-topup, propose-tx]
+prompt: ./prompt.md

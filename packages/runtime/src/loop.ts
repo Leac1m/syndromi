@@ -2,7 +2,7 @@
 // proposals; the policy signer decides allow | needs_approval | block; only `allow` is signed and
 // sent here. Every step is written to the activity log.
 import type { Signature, Transaction } from "@solana/kit";
-import { explorerTx, type Manifest, type PolicySigner } from "@syndromi/core";
+import { errorDetail, explorerTx, type Manifest, type PolicySigner } from "@syndromi/core";
 import type { ToolContext, ToolOutcome, Toolset } from "@syndromi/tools";
 import type { ActivityLog } from "./activity.js";
 import type { ApprovalGateway } from "./approvals.js";
@@ -225,8 +225,8 @@ export async function callTool(
     });
     return frame(call.name, { status: "executed", signature, summary: outcome.summary });
   } catch (error) {
-    await log.emit("error", { message: `${call.name}: send failed: ${(error as Error).message}` });
-    return frame(call.name, { status: "failed", error: (error as Error).message });
+    await log.emit("error", { message: `${call.name}: send failed: ${errorDetail(error)}` });
+    return frame(call.name, { status: "failed", error: errorDetail(error) });
   }
 }
 

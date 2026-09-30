@@ -3,7 +3,14 @@
 // quote, re-check the policy, and send only if the value stays within 10% of what was signed.
 // For each approved top-up: pull it into the agent's wallet through the policy signer.
 import type { Signature, Transaction } from "@solana/kit";
-import { explorerTx, type PolicySigner, pullTopUp, verifyOwnerApproval } from "@syndromi/core";
+import {
+  errorDetail,
+  explorerTx,
+  isTransientNetworkError,
+  type PolicySigner,
+  pullTopUp,
+  verifyOwnerApproval,
+} from "@syndromi/core";
 import { buildMessage, type ToolContext, type Toolset } from "@syndromi/tools";
 import type { ActivityLog } from "./activity.js";
 import type { ServerClient } from "./server-client.js";
@@ -11,10 +18,6 @@ import type { ServerClient } from "./server-client.js";
 export const MAX_DRIFT = 1.1;
 /** Passes a failing simulation is retried (with a fresh quote each time) before giving up. */
 export const SIMULATION_ATTEMPTS = 3;
-
-/** Network hiccups (RPC unreachable, timeouts) that are worth another pass; anything else is final. */
-const TRANSIENT =
-  /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket|timed? ?out/i;
 
 export type WatchResult = {
   executed: string[];
@@ -132,7 +135,7 @@ export async function executeApprovals(opts: {
       });
       await client.reportDraft(draft.id, { status: "executed", signature });
     } catch (error) {
-      await fail(`send failed: ${(error as Error).message}`);
+      await fail(`send failed: ${errorDetail(error)}`);
     }
   }
 
@@ -165,10 +168,10 @@ export async function executeApprovals(opts: {
       });
       await client.reportTopUp(topup.id, { status: "pulled", signature });
     } catch (error) {
-      const message = (error as Error).message;
+      const message = errorDetail(error);
       const tries = (opts.attempts?.get(topup.id) ?? 0) + 1;
       opts.attempts?.set(topup.id, tries);
-      if (opts.attempts && tries < SIMULATION_ATTEMPTS && TRANSIENT.test(message)) {
+      if (opts.attempts && tries < SIMULATION_ATTEMPTS && isTransientNetworkError(error)) {
         await log.emit("error", {
           topupId: topup.id,
           message: `top-up ${topup.id}: ${message} (try ${tries}/${SIMULATION_ATTEMPTS}), retrying`,

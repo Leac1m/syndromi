@@ -166,6 +166,18 @@ _**Not yet met:** two consecutive full runs with the live model. Run 2 is pendin
 
 ---
 
+## Beta track (devnet, bring your own AI)
+
+Design and decisions: [`docs/beta-design.md`](docs/beta-design.md). No model keys from us; server-held
+keys are devnet only.
+
+- [x] Phase 0: `runtime: external`, the `mcp-agent` default template, `syndromi mcp` (stdio), BYO-AI README, landing page at `/` and the app at `/app`.
+- [ ] Phase 1, a reachable server: Dockerfile + compose + Caddy, `/healthz`, env template, deploy guide; DuckDNS name; dashboard on Vercel; hide `fork`; hosted schedules off by default.
+- [ ] Phase 2, remote agents: token store (hashed, scoped, revocable, kill-switch aware); server-held external agents (devnet only); `/agent/v1` HTTP API; `/agent/mcp` over Streamable HTTP; rate limits; dashboard "Connect an AI"; tests.
+- [ ] Phase 3, polish: npm publish of the bundled CLI (owner); a real domain; optional browser chat panel and framework adapters.
+
+---
+
 ## Cut lines (if a day slips, cut in this order)
 
 1. Hosted deploy → demo hosted mode running on your own machine as the server.

@@ -130,6 +130,11 @@ the same policy signer: executed, held for the owner's signature, or blocked. Se
   `fixtures/injection/`.
 - **Mainnet is opt-in.** Every command defaults to devnet; `--mainnet` asks for confirmation.
 
+## Landing page
+
+`apps/landing/` is a static, light-themed page (no build step): open `index.html`, or serve it with
+`python3 -m http.server -d apps/landing 4173`. Before publishing, add the demo video link.
+
 ## Status and roadmap
 
 v0.1.0 (hackathon build): everything above works on devnet and on a Surfpool mainnet fork

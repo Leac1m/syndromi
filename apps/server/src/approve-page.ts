@@ -41,8 +41,7 @@ const page = (cfg: { actionPath: string; chain: string; owner: string }) => `<!d
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>syndromi approval</title>
 <style>
-  :root { color-scheme: light dark; --bg:#f6f7f9; --card:#fff; --fg:#111827; --muted:#6b7280; --accent:#059669; --err:#dc2626; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0b0f17; --card:#111827; --fg:#f3f4f6; --muted:#9ca3af; } }
+  :root { color-scheme: light; --bg:#f6f7f9; --card:#fff; --fg:#111827; --muted:#6b7280; --accent:#059669; --err:#dc2626; }
   body { margin:0; font:16px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--fg); display:grid; place-items:center; min-height:100vh; padding:16px; box-sizing:border-box; }
   .card { background:var(--card); border-radius:16px; padding:24px; max-width:460px; width:100%; box-shadow:0 8px 30px rgba(0,0,0,.12); }
   .head { display:flex; gap:12px; align-items:center; } .head img { width:44px; height:44px; border-radius:10px; }

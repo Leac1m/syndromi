@@ -69,8 +69,10 @@ manifest, so the manifest stays portable:
 - Format `syn_` + 32 random bytes, base64url. Shown **once**, at creation.
 - Stored as a SHA-256 hash plus an 8-character prefix for display. Never logged, never put in the
   activity feed, redacted in error text.
-- Scope: one agent. Fields: id, agent, label, created, last used, expires (default 30 days), revoked.
-  At most 3 live tokens per agent.
+- Scope: one agent. Fields: id, agent, label, created, last used, expires, revoked. At most 3 live
+  tokens per agent.
+- Lifetime: **30 days by default**; the owner picks another from a fixed list when creating the
+  token: 1 day, 7 days, 30 days, 90 days. There is no "never expires" option.
 - The owner creates and revokes them from the dashboard, with the existing owner session
   (`POST/DELETE /owner/agents/:name/tokens`).
 - Checked on every request (no cache), so revocation is immediate.
@@ -182,12 +184,30 @@ register a real domain and move the API and dashboard onto it. The move is confi
 
 ### Packaging
 
+- **Sizing** (measured on a laptop, so treat as indicative): the server under `tsx` used about
+  166 MB resident (288 MB peak) plus a 55 MB launcher; `next start` idled at about 122 MB. Add Caddy,
+  Docker and the OS, and the full stack does not fit in 512 MB. See "Server size" below.
 - A multi-stage `Dockerfile` (Node 24, because `node:sqlite` is built in; pnpm workspace install).
 - `docker-compose.yml`: Caddy (80/443, automatic TLS) and the server (internal port only), volumes
   for the database and Caddy's state, an env file kept out of the image.
 - A `/healthz` endpoint, and a SQLite backup job. **Back up `SYNDROMI_HOSTED_SECRET` separately:**
   losing it loses every server-held key.
 - A short deploy guide, including the Telegram re-link and the one-poller rule.
+
+### Server size (DigitalOcean)
+
+Plans per the search results (verify on DigitalOcean's pricing page before buying): Basic 512 MB at
+$4 a month (1 vCPU, 10 GB disk), Basic 1 GB at $6 (25 GB), Basic 2 GB at $12 (50 GB).
+
+| Layout | Memory needed (rough) | Plan |
+|---|---|---|
+| Server + Caddy, no Docker, precompiled JS | about 300 MB | 512 MB works but is tight (the server peaked at 288 MB) |
+| Server + Caddy in Docker, dashboard on Vercel | about 450 MB | **1 GB with a swap file (the beta default)** |
+| Everything on one droplet (server, dashboard, Caddy, Docker) | about 700 MB, more at peak | 2 GB |
+
+Do not run `pnpm install` or `next build` on the droplet; build the image elsewhere and pull it.
+Precompiling the server to JavaScript instead of running it through `tsx` would save the launcher
+process and some memory; that is an optional optimisation.
 
 ## Work plan
 
@@ -217,8 +237,9 @@ Rough effort: Phase 1 about a day, Phase 2 about two days, Phase 3 as time allow
 
 ## Decisions needed
 
-1. **Server-held keys for testers (devnet).** Yes or no? The design assumes yes, devnet only.
-2. **Token lifetime.** 30 days by default; shorter if you prefer.
+1. ~~Server-held keys for testers (devnet)~~ **Decided: yes**, devnet only. Testers bring their own
+   AI; the server never holds their provider keys.
+2. ~~Token lifetime~~ **Decided: 30 days by default**, with a picker (1, 7, 30, 90 days).
 3. **Invite-only or open.** Sign-in is open to any wallet today. With no model keys to protect, open
    is acceptable, but the per-owner limits matter. An optional owner allowlist is a small add.
 4. **Domain.** DuckDNS first, a real domain before the wider beta?

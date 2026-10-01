@@ -13,7 +13,7 @@ export function RemoveAgent({ name }: { name: string }) {
     setError(undefined);
     try {
       await api.removeAgent(name);
-      router.push("/");
+      router.push("/app");
     } catch (e) {
       setState("idle");
       setError((e as Error).message);

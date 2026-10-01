@@ -17,7 +17,7 @@ stops answering, a run switches to Anthropic by itself, and the feed shows "swit
    never waits on a cron). Ctrl-C stops both.
    - On a fresh `SYNDROMI_HOME`, open the printed `t.me/syndromi_bot?start=…` link and press Start.
    - The URL changes on every start; Telegram buttons use the new one automatically.
-3. **Dashboard**: `pnpm --filter @syndromi/dashboard dev` and open http://localhost:3000.
+3. **Dashboard**: `pnpm --filter @syndromi/dashboard dev` and open http://localhost:3000/app (the landing page is at `/`).
    - If port 3000 is taken: `pnpm --filter @syndromi/dashboard exec next dev --port 3001`, and
      start with `DASHBOARD_ORIGINS=http://localhost:3001 pnpm demo:up`.
 4. **Owner on the fork** (rehearsals only): give the owner SOL and USDC on the fork:

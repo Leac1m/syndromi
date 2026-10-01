@@ -22,7 +22,7 @@ export default function AgentPage({ params }: { params: Promise<{ name: string }
     return (
       <p className="text-sm text-muted">
         No agent “{name}” on {app.network}.{" "}
-        <Link href="/" className="underline">
+        <Link href="/app" className="underline">
           Back
         </Link>
       </p>

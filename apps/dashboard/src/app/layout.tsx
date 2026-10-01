@@ -1,22 +1,17 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Providers } from "@/components/providers";
-import { Shell } from "@/components/shell";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "syndromí",
-  description: "Budgets, permissions, and approvals for onchain AI agents",
+  title: { default: "syndromí: budgets for AI agents on Solana", template: "%s · syndromí" },
+  description:
+    "Give AI agents an allowance, not your wallet. Onchain budgets, a policy check on every transaction, approvals by Blink, and a one-signature kill switch.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen font-sans antialiased">
-        <Providers>
-          <Shell>{children}</Shell>
-        </Providers>
-      </body>
+      <body className="min-h-screen font-sans antialiased">{children}</body>
     </html>
   );
 }

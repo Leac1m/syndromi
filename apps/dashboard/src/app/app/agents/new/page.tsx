@@ -207,7 +207,7 @@ export default function NewAgent() {
           {created && (
             <p className="mt-3 text-sm text-muted">
               Created. After funding, see it on the{" "}
-              <Link className="underline" href="/">
+              <Link className="underline" href="/app">
                 overview
               </Link>
               .

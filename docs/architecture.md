@@ -286,9 +286,10 @@ Gotchas found on Day 4:
 
 | Screen | What it does |
 |---|---|
-| Overview `/` | Bag (USDC, SOL, allocated per period), agents (remaining this period, pending), inline approvals, activity feed (3 s poll, BLOCKED in red, explorer links), kill switch |
-| New agent `/agents/new` | Template → budget and rules → live rule card (`POST /owner/preview`) → hosted: `POST /owner/agents`, then `fund-agent`; local: the `syndromi init --server --owner` command, wait for registration, then `fund-agent` |
-| Agent `/agents/[name]` | Rule card, allowance left and reset time, top-ups, that agent's activity |
+| Landing `/` | The marketing page: pitch, how it works, what is enforced where, MCP, a devnet-beta section, FAQ. Server components only, so it ships no wallet code |
+| Overview `/app` | Bag (USDC, SOL, allocated per period), agents (remaining this period, pending), inline approvals, activity feed (3 s poll, BLOCKED in red, explorer links), kill switch |
+| New agent `/app/agents/new` | Template → budget and rules → live rule card (`POST /owner/preview`) → hosted: `POST /owner/agents`, then `fund-agent`; local: the `syndromi init --server --owner` command, wait for registration, then `fund-agent` |
+| Agent `/app/agents/[name]` | Rule card, allowance left and reset time, top-ups, that agent's activity |
 
 **Owner sessions.**
 - `POST /owner/session/challenge` → the wallet signs the text → `POST /owner/session` → a 12 h token.

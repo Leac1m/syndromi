@@ -64,7 +64,7 @@ The dashboard and phone approvals:
 1. Add `SYNDROMI_SERVER_TOKEN` (`openssl rand -hex 24`), `SYNDROMI_HOSTED_SECRET`
    (`openssl rand -hex 32`) and `TELEGRAM_BOT_TOKEN` to `.env`.
 2. Run `pnpm demo:up` (tunnel + server), then `pnpm --filter @syndromi/dashboard dev`.
-3. Open http://localhost:3000 and connect Phantom.
+3. Open http://localhost:3000/app and connect Phantom (the landing page is at `/`).
 
 The full six-step demo is in [`docs/demo-runbook.md`](docs/demo-runbook.md).
 
@@ -130,10 +130,10 @@ the same policy signer: executed, held for the owner's signature, or blocked. Se
   `fixtures/injection/`.
 - **Mainnet is opt-in.** Every command defaults to devnet; `--mainnet` asks for confirmation.
 
-## Landing page
+## The web app
 
-`apps/landing/` is a static, light-themed page (no build step): open `index.html`, or serve it with
-`python3 -m http.server -d apps/landing 4173`. Before publishing, add the demo video link.
+`apps/dashboard` serves the product: a landing page at `/` (server-rendered, no wallet code) and the
+app under `/app` (connect Phantom, bag, agents, approvals, kill switch). Both are light-themed.
 
 ## Status and roadmap
 

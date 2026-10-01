@@ -11,6 +11,10 @@
   --color-good: #059669;
   --color-warn: #b45309;
   --color-bad: #dc2626;
+  --color-brand: #047857;
+  --color-brand-soft: #ecfdf5;
+  --color-bad-soft: #fef2f2;
+  --color-code: #0f172a;
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 

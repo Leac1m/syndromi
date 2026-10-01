@@ -107,6 +107,32 @@ gets the agent's tools and the owner's rule card, never a key, and every write g
 the same policy signer: executed, held for the owner's signature, or blocked. See
 [`docs/package-spec.md`](docs/package-spec.md#using-a-syndromí-agent-from-another-agent-mcp).
 
+## Bring your own AI
+
+syndromi never supplies a model key. The brain is yours, in one of these ways:
+
+| How | Your key lives | Needs |
+|---|---|---|
+| **MCP client** (Claude, Cursor): `syndromi mcp <dir>`, see above | in your MCP client | the repo cloned (no package is published yet) |
+| **Local runner**: `syndromi run <dir>`, a `local` agent with your own model | in your shell environment, never sent to a server | the repo cloned |
+
+For the local runner, pick the provider in the agent's `manifest.yaml` and name the variable that
+holds your key (the key itself never goes in the file):
+
+```yaml
+runtime: local
+model: openai-compatible:https://integrate.api.nvidia.com/v1   # any OpenAI-compatible endpoint
+model_id: meta/muse-glimmer-30b
+api_key_env: NVIDIA_API_KEY          # export NVIDIA_API_KEY=… in your shell or .env
+```
+
+Or switch for one run: `pnpm syndromi run <dir> --model gemini:<id>` (`GEMINI_API_KEY`) or
+`--model anthropic:<id>` (`ANTHROPIC_API_KEY`). Any server that speaks the OpenAI chat-completions
+API works as `openai-compatible:<base url>`. With `--server`, drafts still go to Telegram and the
+dashboard and the rules are the same.
+
+Coming next: remote MCP and a plain HTTP tool API, so testers need no clone at all.
+
 ## Security model
 
 - **The budget is enforced onchain.** An agent can only pull what its delegation allows this

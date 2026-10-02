@@ -45,7 +45,7 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
   owner.post("/session/challenge", async (c) => {
     const { owner: address } = (await c.req.json().catch(() => ({}))) as { owner?: string };
     try {
-      return c.json(challenge(store, address ?? ""));
+      return c.json(await challenge(store, address ?? ""));
     } catch (e) {
       return c.json({ error: (e as Error).message }, 400);
     }
@@ -73,7 +73,7 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
   owner.use("*", async (c, next) => {
     if (c.req.method === "OPTIONS") return next();
     const token = c.req.header("authorization")?.replace(/^Bearer /, "") ?? "";
-    const who = store.sessionOwner(token);
+    const who = await store.sessionOwner(token);
     if (!who) return c.json({ error: "sign in first" }, 401);
     c.set("owner", who);
     await next();
@@ -103,13 +103,14 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
         : Promise.resolve(0n),
       listDelegations(rpc, who).catch(() => []),
     ]);
-    const agents = store.agents(who).filter((a) => a.cluster === cluster);
-    const pendingDrafts = store
-      .drafts({ status: "pending" })
-      .filter((d) => d.owner === who && d.cluster === cluster);
-    const pendingTopUps = store
-      .topUps({ status: "pending" })
-      .filter((t) => t.owner === who && t.cluster === cluster);
+    const [ownAgents, drafts, topups] = await Promise.all([
+      store.agents(who),
+      store.drafts({ status: "pending" }),
+      store.topUps({ status: "pending" }),
+    ]);
+    const agents = ownAgents.filter((a) => a.cluster === cluster);
+    const pendingDrafts = drafts.filter((d) => d.owner === who && d.cluster === cluster);
+    const pendingTopUps = topups.filter((t) => t.owner === who && t.cluster === cluster);
     const perPeriod: Record<string, number> = {};
     const view = agents.map((a) => {
       const own = delegations.filter((d) => d.agent === a.address);
@@ -169,12 +170,12 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
     );
   });
 
-  owner.get("/activity", (c) => {
+  owner.get("/activity", async (c) => {
     const who = c.get("owner");
-    const names = store.agents(who).map((a) => a.name);
+    const names = (await store.agents(who)).map((a) => a.name);
     const agent = c.req.query("agent");
     const after = c.req.query("after");
-    const events = store.activity({
+    const events = await store.activity({
       agentNames: agent ? names.filter((n) => n === agent) : names,
       ...(after ? { after: Number(after) } : {}),
       limit: 200,
@@ -182,8 +183,8 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
     return c.json(serialize({ events }));
   });
 
-  owner.get("/agents/:name", (c) => {
-    const agent = store.agent(c.req.param("name"));
+  owner.get("/agents/:name", async (c) => {
+    const agent = await store.agent(c.req.param("name"));
     if (!agent || agent.owner !== c.get("owner")) return c.json({ error: "no such agent" }, 404);
     return c.json(serialize(publicAgent(agent)));
   });
@@ -226,8 +227,8 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
   });
 
   // Run a hosted agent now (the dashboard's "Run now"); results arrive in the activity feed.
-  owner.post("/agents/:name/run", (c) => {
-    const agent = store.agent(c.req.param("name"));
+  owner.post("/agents/:name/run", async (c) => {
+    const agent = await store.agent(c.req.param("name"));
     if (!agent || agent.owner !== c.get("owner")) return c.json({ error: "no such agent" }, 404);
     if (agent.runtime !== "hosted") {
       const where = agent.runtime === "external" ? "is driven by an MCP client" : "runs locally";
@@ -242,11 +243,11 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
   // Remove an agent the owner no longer wants. Only when nothing is delegated to it and nothing
   // waits for approval; a hosted key is archived, not deleted (its wallet may hold funds).
   owner.delete("/agents/:name", async (c) => {
-    const agent = store.agent(c.req.param("name"));
+    const agent = await store.agent(c.req.param("name"));
     if (!agent || agent.owner !== c.get("owner")) return c.json({ error: "no such agent" }, 404);
     const pending =
-      store.drafts({ agentName: agent.name, status: "pending" }).length +
-      store.topUps({ agentName: agent.name, status: "pending" }).length;
+      (await store.drafts({ agentName: agent.name, status: "pending" })).length +
+      (await store.topUps({ agentName: agent.name, status: "pending" })).length;
     if (pending > 0) {
       return c.json(
         { error: `${agent.name} has ${pending} request(s) waiting; reject them first` },
@@ -272,7 +273,7 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
       );
     }
     ctx.hosted?.unload?.(agent.name);
-    store.removeAgent(agent.name);
+    await store.removeAgent(agent.name);
     return c.json({ removed: agent.name });
   });
 
@@ -307,7 +308,7 @@ export async function createHostedAgent(
     };
   }
   const manifest = parsed.data;
-  if (ctx.store.agent(manifest.name)) {
+  if (await ctx.store.agent(manifest.name)) {
     return { ok: false, status: 409, error: `an agent named ${manifest.name} exists` };
   }
   let mint: Address;
@@ -317,14 +318,14 @@ export async function createHostedAgent(
     return { ok: false, status: 400, error: (e as Error).message };
   }
   const keypair = await generateAgentKeypair();
-  ctx.store.saveHostedKey(manifest.name, await encryptKeypair(keypair, secret));
+  await ctx.store.saveHostedKey(manifest.name, await encryptKeypair(keypair, secret));
   const agent: AgentRecord = {
     ...registrationFor(manifest, keypair.signer.address, args.owner, args.cluster, mint),
     registeredAt: new Date().toISOString(),
     manifest: manifest as unknown as Record<string, unknown>,
     prompt: args.prompt,
   };
-  ctx.store.upsertAgent(agent);
+  await ctx.store.upsertAgent(agent);
   ctx.hosted?.scan();
   return { ok: true, agent };
 }

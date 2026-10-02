@@ -41,7 +41,7 @@ export function mountApi(app: Hono, ctx: ServerContext) {
   app.post("/api/agents", async (c) => {
     const body = (await c.req.json()) as Omit<AgentRecord, "registeredAt">;
     try {
-      store.upsertAgent({ ...body, registeredAt: new Date().toISOString() });
+      await store.upsertAgent({ ...body, registeredAt: new Date().toISOString() });
     } catch (e) {
       return c.json({ error: (e as Error).message }, 409);
     }
@@ -91,12 +91,12 @@ export function mountApi(app: Hono, ctx: ServerContext) {
       agentName: string;
       events: ({ type: string; at: string } & Record<string, unknown>)[];
     };
-    recordActivity(ctx, agentName, events);
+    await recordActivity(ctx, agentName, events);
     return c.json({ ok: true });
   });
 
-  app.get("/api/agents/:name/approvals", (c) =>
-    c.json(serialize(approvalsFor(ctx, c.req.param("name")))),
+  app.get("/api/agents/:name/approvals", async (c) =>
+    c.json(serialize(await approvalsFor(ctx, c.req.param("name")))),
   );
 
   app.post("/api/drafts/:id/reject", (c) =>

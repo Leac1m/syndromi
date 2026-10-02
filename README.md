@@ -92,7 +92,7 @@ The full six-step demo is in [`docs/demo-runbook.md`](docs/demo-runbook.md).
 | `packages/tools` | first-party tools: `balances`, `pyth-price`, `jupiter-quote`, `jupiter-swap`, `pull-allowance`, `request-topup`, `propose-tx`, `yield-data` |
 | `packages/runtime` | agent loop, LLM providers (Anthropic, any OpenAI-compatible endpoint, failover), approvals watcher |
 | `packages/cli` | `syndromi init · fund · run · watch · deploy · approve · action · request-topup · status · revoke` |
-| `apps/server` | approvals API, Solana Actions/Blinks, the Telegram bot, the hosted runtime (Hono + SQLite) |
+| `apps/server` | approvals API, Solana Actions/Blinks, the Telegram bot, the hosted runtime (Hono; SQLite locally, Postgres when hosted) |
 | `apps/dashboard` | Next.js: bag, agent wizard, rule cards, activity feed, Run now, kill switch |
 
 An agent is a portable directory (`manifest.yaml` + `prompt.md`) that runs **locally** (free,

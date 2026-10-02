@@ -167,6 +167,24 @@ phone / Telegram ─► https://api.<name>/approve/…
 - `DASHBOARD_ORIGINS` must list the dashboard's origin. Only one Telegram poller may run per bot
   token, so stop any local server before the VPS one starts.
 
+### Running now (Oct 2): Render + Neon + Vercel
+
+A free trial of the topology above, before the VPS:
+
+- **Server:** a free Render web service from this repo (no `render.yaml`): build
+  `npx --yes pnpm@12.5.1 install --frozen-lockfile`, start `./node_modules/.bin/tsx apps/server/src/main.ts`,
+  `NODE_VERSION=24`, health check `/`. URL `https://syndromi.onrender.com`.
+- **Data:** Neon Postgres through `DATABASE_URL` (the direct connection; the pooled one is for
+  serverless callers). Render's free tier wipes local files on every sleep and deploy, so SQLite
+  there loses agents, sessions and hosted keys. The store runs on SQLite or Postgres behind one
+  async interface; `pnpm test` covers both when `SYNDROMI_TEST_DATABASE_URL` is set (it uses a
+  throwaway schema).
+- **Dashboard:** Vercel project `syndromi` (root `apps/dashboard`), Git-connected, production from
+  `main`, at `https://syndromi.vercel.app`.
+- **Still limited:** the free instance sleeps after 15 minutes without requests (about a minute to
+  wake), and while asleep the Telegram bot, the approval watcher and the expiry sweeper pause. A
+  paid instance or the VPS removes that; the data no longer depends on it.
+
 ### Choosing the domain
 
 | Option | Stable? | Cost | Fit |

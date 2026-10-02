@@ -11,26 +11,32 @@ import type {
 import { approvalMessage, verifyOwnerApproval } from "@syndromi/core";
 import type { Context, Hono } from "hono";
 import type { ServerContext } from "../context.js";
-import type { DraftRecord } from "../db.js";
+import { type DraftRecord, StatusChanged } from "../db.js";
 import { actionError, actionJson } from "./spec.js";
 
 export function mountApproveDraft(app: Hono, ctx: ServerContext, icon: string) {
   const { store } = ctx;
   const path = (id: string) => `/actions/approve-draft/${id}`;
 
-  const load = (c: Context) => {
-    const draft = store.draft(c.req.param("id") ?? "");
+  const load = async (c: Context) => {
+    const draft = await store.draft(c.req.param("id") ?? "");
     if (!draft) return { error: actionError(c, "No such draft", 404) };
     if (draft.status === "pending" && Date.parse(draft.expiresAt) < Date.now()) {
-      return { draft: store.updateDraft(draft.id, { status: "expired" }) };
+      const expired = await store
+        .updateDraft(draft.id, { status: "expired" }, ["pending"])
+        .catch(async (e) => {
+          if (e instanceof StatusChanged) return (await store.draft(draft.id)) ?? draft;
+          throw e;
+        });
+      return { draft: expired };
     }
     return { draft };
   };
 
-  app.get(path(":id"), (c) => {
-    const { draft, error } = load(c);
+  app.get(path(":id"), async (c) => {
+    const { draft, error } = await load(c);
     if (!draft) return error;
-    const agent = store.agent(draft.agentName);
+    const agent = await store.agent(draft.agentName);
     const threshold = agent
       ? ` (above your $${agent.rules.approveAboveUsd} approval threshold)`
       : "";
@@ -52,7 +58,7 @@ export function mountApproveDraft(app: Hono, ctx: ServerContext, icon: string) {
   });
 
   app.post(path(":id"), async (c) => {
-    const { draft, error } = load(c);
+    const { draft, error } = await load(c);
     if (!draft) return error;
     if (draft.status !== "pending") return actionError(c, `This draft is ${draft.status}.`, 409);
     const { account } = (await c.req.json().catch(() => ({}))) as { account?: string };
@@ -69,7 +75,7 @@ export function mountApproveDraft(app: Hono, ctx: ServerContext, icon: string) {
       nonce,
       issuedAt: new Date(),
     });
-    store.issueSignRequest(nonce, draft.id, text);
+    await store.issueSignRequest(nonce, draft.id, text);
     const body: SignMessageResponse = {
       type: "message",
       data: text,
@@ -80,11 +86,11 @@ export function mountApproveDraft(app: Hono, ctx: ServerContext, icon: string) {
   });
 
   app.post(`${path(":id")}/verify`, async (c) => {
-    const { draft, error } = load(c);
+    const { draft, error } = await load(c);
     if (!draft) return error;
     if (draft.status !== "pending") return actionError(c, `This draft is ${draft.status}.`, 409);
     const body = (await c.req.json().catch(() => ({}))) as Partial<MessageNextActionPostRequest>;
-    const text = body.state ? store.consumeSignRequest(body.state, draft.id) : undefined;
+    const text = body.state ? await store.consumeSignRequest(body.state, draft.id) : undefined;
     if (!text) return actionError(c, "Unknown or already used approval request.", 400);
     if (typeof body.data === "string" && body.data !== text) {
       return actionError(c, "Signed data does not match the approval request.", 400);
@@ -99,11 +105,17 @@ export function mountApproveDraft(app: Hono, ctx: ServerContext, icon: string) {
       draft,
     });
     if (!check.ok) return actionError(c, `Approval rejected: ${check.reason}.`, 400);
-    const approved = store.updateDraft(draft.id, {
-      status: "approved",
-      approvalText: text,
-      approvalSignature: body.signature,
-    });
+    let approved: DraftRecord;
+    try {
+      approved = await store.updateDraft(
+        draft.id,
+        { status: "approved", approvalText: text, approvalSignature: body.signature },
+        ["pending"], // it may have expired or been rejected while the owner was signing
+      );
+    } catch (e) {
+      if (e instanceof StatusChanged) return actionError(c, `This draft is ${e.status}.`, 409);
+      throw e;
+    }
     ctx.bus.emit("draft", approved);
     const done: CompletedAction = {
       type: "completed",

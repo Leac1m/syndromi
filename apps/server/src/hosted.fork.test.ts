@@ -79,7 +79,7 @@ describe.skipIf(!surfpoolUp)("hosted pool-scout injection on the fork", () => {
       botInfo: { id: 1, is_bot: true, first_name: "s", username: "syndromi_bot" } as never,
       transformer,
     });
-    ctx.store.setSetting("telegram_chat_id", "42");
+    await ctx.store.setSetting("telegram_chat_id", "42");
 
     const created = await createHostedAgent(ctx, {
       manifest,
@@ -112,7 +112,7 @@ describe.skipIf(!surfpoolUp)("hosted pool-scout injection on the fork", () => {
     runtime.scan();
     await runtime.runAndWait("pool-scout");
 
-    const events = ctx.store.activity({ agentNames: ["pool-scout"], limit: 100 }).reverse();
+    const events = (await ctx.store.activity({ agentNames: ["pool-scout"], limit: 100 })).reverse();
     const types = events.map((e) => e.type);
     const blocked = events.find((e) => e.type === "blocked");
     expect(blocked, JSON.stringify(types)).toBeDefined();

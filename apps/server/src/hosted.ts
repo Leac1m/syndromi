@@ -121,7 +121,14 @@ export class HostedRuntime {
   }
 
   private async loadNew() {
-    for (const record of this.ctx.store.agents()) {
+    let records: AgentRecord[];
+    try {
+      records = await this.ctx.store.agents();
+    } catch (e) {
+      this.opts.log?.(`hosted: could not read agents: ${(e as Error).message}`);
+      return;
+    }
+    for (const record of records) {
       if (record.runtime !== "hosted" || !record.manifest || this.agents.has(record.name)) continue;
       try {
         this.agents.set(record.name, await this.load(record));
@@ -134,7 +141,7 @@ export class HostedRuntime {
 
   private async load(record: AgentRecord): Promise<Loaded> {
     const secret = this.ctx.config.env.SYNDROMI_HOSTED_SECRET ?? "";
-    const encrypted = this.ctx.store.hostedKey(record.name) as EncryptedKeypair | undefined;
+    const encrypted = (await this.ctx.store.hostedKey(record.name)) as EncryptedKeypair | undefined;
     if (!encrypted) throw new Error("no key stored");
     const { signer } = await decryptKeypair(encrypted, secret);
     if (signer.address !== record.address) throw new Error("stored key does not match the agent");
@@ -174,11 +181,11 @@ export class HostedRuntime {
     const ctx = this.ctx;
     return {
       async submitDraft(draft) {
-        const saved = createDraft(ctx, { agentName: name, ...draft });
+        const saved = await createDraft(ctx, { agentName: name, ...draft });
         return { ...draft, id: saved.id, createdAt: saved.createdAt, status: "pending" };
       },
       async requestTopUp(request) {
-        const saved = createTopUp(ctx, { agentName: name, ...request });
+        const saved = await createTopUp(ctx, { agentName: name, ...request });
         return { ...request, id: saved.id, createdAt: saved.createdAt, status: "pending" };
       },
     };

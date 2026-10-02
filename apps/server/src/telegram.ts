@@ -8,7 +8,7 @@ import { Bot, InlineKeyboard, type Transformer } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import { blinkUrl } from "./actions/spec.js";
 import type { ServerContext } from "./context.js";
-import type { DraftRecord, TopUpRecord } from "./db.js";
+import { type DraftRecord, StatusChanged, type TopUpRecord } from "./db.js";
 
 const CHAT = "telegram_chat_id";
 const CODE = "telegram_link_code";
@@ -16,7 +16,7 @@ const CODE = "telegram_link_code";
 export type Telegram = {
   bot: Bot;
   /** Deep link that binds the owner's chat, or undefined once bound. */
-  linkUrl(): string | undefined;
+  linkUrl(): Promise<string | undefined>;
   start(): Promise<void>;
   stop(): Promise<void>;
 };
@@ -30,18 +30,19 @@ export async function createTelegram(
   if (opts.transformer) bot.api.config.use(opts.transformer);
   if (!opts.botInfo) await bot.init();
 
-  if (!store.setting(CHAT) && !store.setting(CODE)) {
-    store.setSetting(CODE, crypto.randomUUID().replaceAll("-", "").slice(0, 16));
+  if (!(await store.setting(CHAT)) && !(await store.setting(CODE))) {
+    await store.setSetting(CODE, crypto.randomUUID().replaceAll("-", "").slice(0, 16));
   }
   const chatId = () => store.setting(CHAT);
-  const isOwner = (id: number | undefined) => id !== undefined && String(id) === chatId();
+  const isOwner = async (id: number | undefined) =>
+    id !== undefined && String(id) === (await chatId());
 
   bot.command("start", async (c) => {
-    if (isOwner(c.chat.id)) return c.reply("Already linked. Approvals will arrive here.");
-    const code = store.setting(CODE);
+    if (await isOwner(c.chat.id)) return c.reply("Already linked. Approvals will arrive here.");
+    const code = await store.setting(CODE);
     if (!code || c.match.trim() !== code) return c.reply("This syndromi bot is private.");
-    store.setSetting(CHAT, String(c.chat.id));
-    store.db.prepare("delete from settings where key = ?").run(CODE);
+    await store.setSetting(CHAT, String(c.chat.id));
+    await store.deleteSetting(CODE);
     return c.reply(
       "Linked. You'll get approval requests, top-up requests, and BLOCKED alerts here. " +
         "Approving always means signing in your wallet.",
@@ -49,16 +50,16 @@ export async function createTelegram(
   });
 
   bot.command("pending", async (c) => {
-    if (!isOwner(c.chat.id)) return;
-    const drafts = store.drafts({ status: "pending" });
-    const topups = store.topUps({ status: "pending" });
+    if (!(await isOwner(c.chat.id))) return;
+    const drafts = await store.drafts({ status: "pending" });
+    const topups = await store.topUps({ status: "pending" });
     if (!drafts.length && !topups.length) return c.reply("Nothing pending.");
-    for (const d of drafts) await send(draftMessage(d), draftKeyboard(d));
+    for (const d of drafts) await send(await draftMessage(d), draftKeyboard(d));
     for (const t of topups) await send(topUpMessage(t), topUpKeyboard(t));
   });
 
   bot.command("kill", async (c) => {
-    if (!isOwner(c.chat.id)) return;
+    if (!(await isOwner(c.chat.id))) return;
     const link = (cluster: string) =>
       `${config.publicUrl}/blink?action=${encodeURIComponent(`/actions/kill-switch?cluster=${cluster}`)}`;
     const keyboard = new InlineKeyboard()
@@ -76,23 +77,34 @@ export async function createTelegram(
   });
 
   bot.callbackQuery(/^reject:(d_\w+|t_\w+)$/, async (c) => {
-    if (!isOwner(c.chat?.id)) return c.answerCallbackQuery({ text: "Not allowed." });
+    if (!(await isOwner(c.chat?.id))) return c.answerCallbackQuery({ text: "Not allowed." });
     const id = c.match[1] ?? "";
-    const record = id.startsWith("d_") ? store.draft(id) : store.topUp(id);
+    const record = id.startsWith("d_") ? await store.draft(id) : await store.topUp(id);
     if (record?.status !== "pending") {
       return c.answerCallbackQuery({ text: `Already ${record?.status ?? "gone"}.` });
     }
-    if (id.startsWith("d_")) bus.emit("draft", store.updateDraft(id, { status: "rejected" }));
-    else bus.emit("topup", store.updateTopUp(id, { status: "rejected" }));
+    try {
+      if (id.startsWith("d_")) {
+        bus.emit("draft", await store.updateDraft(id, { status: "rejected" }, ["pending"]));
+      } else {
+        bus.emit("topup", await store.updateTopUp(id, { status: "rejected" }, ["pending"]));
+      }
+    } catch (e) {
+      if (!(e instanceof StatusChanged)) throw e;
+      return c.answerCallbackQuery({ text: `Already ${e.status}.` });
+    }
     await c.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => undefined);
     return c.answerCallbackQuery({ text: "Rejected." });
   });
 
-  async function send(html: string, keyboard?: InlineKeyboard) {
-    const chat = chatId();
+  async function send(html: string | Promise<string>, keyboard?: InlineKeyboard) {
+    const chat = await chatId().catch((e) => {
+      console.error("telegram:", (e as Error).message);
+      return undefined;
+    });
     if (!chat) return;
     await bot.api
-      .sendMessage(chat, html, {
+      .sendMessage(chat, await html, {
         parse_mode: "HTML",
         link_preview_options: { is_disabled: true },
         ...(keyboard ? { reply_markup: keyboard } : {}),
@@ -123,8 +135,8 @@ export async function createTelegram(
   const draftKeyboard = (d: DraftRecord) => approvalKeyboard(d.id);
   const topUpKeyboard = (t: TopUpRecord) => approvalKeyboard(t.id);
 
-  function draftMessage(d: DraftRecord): string {
-    const agent = store.agent(d.agentName);
+  async function draftMessage(d: DraftRecord): Promise<string> {
+    const agent = await store.agent(d.agentName).catch(() => undefined);
     const threshold = agent
       ? `, above your $${agent.rules.approveAboveUsd} approval threshold`
       : "";
@@ -184,8 +196,8 @@ export async function createTelegram(
 
   return {
     bot,
-    linkUrl: () => {
-      const code = store.setting(CODE);
+    linkUrl: async () => {
+      const code = await store.setting(CODE);
       return code ? `https://t.me/${bot.botInfo.username}?start=${code}` : undefined;
     },
     start: async () => {

@@ -130,7 +130,7 @@ describe("owner-scoped data", () => {
     expect(JSON.stringify(agent)).not.toMatch(/ciphertext|secret/i);
     expect((agent.ruleCard as string[])[0]).toMatch(/up to 30 USDC per week/);
 
-    const stored = ctx.store.hostedKey("scout-1") as EncryptedKeypair;
+    const stored = (await ctx.store.hostedKey("scout-1")) as EncryptedKeypair;
     const decrypted = await decryptKeypair(stored, SECRET);
     expect(decrypted.signer.address).toBe(agent.address);
 
@@ -156,7 +156,7 @@ describe("owner-scoped data", () => {
   });
 
   it("never shows one owner another owner's agents or activity", async () => {
-    ctx.store.upsertAgent({
+    await ctx.store.upsertAgent({
       name: "bobs-agent",
       address: (await generateKeyPairSigner()).address,
       owner: bob.address as Address,
@@ -165,7 +165,7 @@ describe("owner-scoped data", () => {
       rules: { maxTxUsd: 25, approveAboveUsd: 10, destinations: ["self"], programs: ["jupiter"] },
       registeredAt: new Date().toISOString(),
     });
-    ctx.store.addActivity("bobs-agent", {
+    await ctx.store.addActivity("bobs-agent", {
       type: "blocked",
       at: new Date().toISOString(),
       reasons: ["x"],
@@ -177,12 +177,10 @@ describe("owner-scoped data", () => {
       events: unknown[];
     };
     expect(activity.events).toEqual([]);
-    expect(() =>
-      ctx.store.upsertAgent({
-        ...(ctx.store.agent("bobs-agent") as NonNullable<ReturnType<Store["agent"]>>),
-        owner: alice.address,
-      }),
-    ).toThrow(/different owner/);
+    const bobs = await ctx.store.agent("bobs-agent");
+    await expect(
+      ctx.store.upsertAgent({ ...(bobs as NonNullable<typeof bobs>), owner: alice.address }),
+    ).rejects.toThrow(/different owner/);
     // Bob's agent cannot be run by Alice either.
     expect((await req("/owner/agents/bobs-agent/run", { token, body: {} })).status).toBe(404);
   });
@@ -224,7 +222,7 @@ describe("hosted agents: deploy and run now", () => {
     const ok = await api("t");
     expect(ok.status).toBe(200);
     expect(await ok.json()).toMatchObject({ name: "scout-deployed", cluster: "fork" });
-    expect(ctx.store.agent("scout-deployed")).toMatchObject({
+    expect(await ctx.store.agent("scout-deployed")).toMatchObject({
       runtime: "hosted",
       owner: alice.address,
     });
@@ -277,12 +275,12 @@ describe("hosted agents: deploy and run now", () => {
     const ok = await remove();
     expect(await ok.json()).toEqual({ removed: "yield-scout" });
     expect(unloaded).toEqual(["yield-scout"]);
-    expect(ctx.store.agent("yield-scout")).toBeUndefined();
-    expect(ctx.store.hostedKey("yield-scout")).toBeUndefined();
+    expect(await ctx.store.agent("yield-scout")).toBeUndefined();
+    expect(await ctx.store.hostedKey("yield-scout")).toBeUndefined();
     // The key is archived, not gone: its wallet may still hold the fee budget.
-    const archived = ctx.store.db
-      .prepare("select name from hosted_keys where name like 'removed/yield-scout/%'")
-      .all();
+    const archived = await ctx.store.sql.all(
+      "select name from hosted_keys where name like 'removed/yield-scout/%'",
+    );
     expect(archived).toHaveLength(1);
     // The name is free again.
     const again = await req("/owner/agents", {

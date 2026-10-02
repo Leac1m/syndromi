@@ -144,7 +144,10 @@ describe("approving a draft by signing a message", () => {
       state: request.state,
     });
     expect(await verified.json()).toMatchObject({ type: "completed", title: "Approved" });
-    expect(ctx.store.draft(id)).toMatchObject({ status: "approved", approvalText: request.data });
+    expect(await ctx.store.draft(id)).toMatchObject({
+      status: "approved",
+      approvalText: request.data,
+    });
 
     const approvals = (await (await api("/api/agents/yield-scout/approvals")).json()) as {
       drafts: { id: string; intent: { inputAmount: string } }[];
@@ -180,14 +183,14 @@ describe("approving a draft by signing a message", () => {
       state: request.state,
     });
     expect(await replay.json()).toMatchObject({ message: /already used/ });
-    expect(ctx.store.draft(id)?.status).toBe("pending");
+    expect((await ctx.store.draft(id))?.status).toBe("pending");
 
-    ctx.store.updateDraft(id, { expiresAt: new Date(Date.now() - 1000).toISOString() });
+    await ctx.store.updateDraft(id, { expiresAt: new Date(Date.now() - 1000).toISOString() });
     const card = (await (await action(`/actions/approve-draft/${id}`)).json()) as {
       disabled: boolean;
     };
     expect(card.disabled).toBe(true);
-    expect(ctx.store.draft(id)?.status).toBe("expired");
+    expect((await ctx.store.draft(id))?.status).toBe("expired");
     expect((await action(`/actions/approve-draft/${id}`, { account: owner.address })).status).toBe(
       409,
     );
@@ -235,7 +238,7 @@ describe("owner transactions (/actions/tx/:id/submit)", () => {
         ),
       );
     const issued = build(1);
-    ctx.store.saveOwnerTx({
+    await ctx.store.saveOwnerTx({
       id: "x_test",
       owner: owner.address,
       cluster: "devnet",
@@ -258,8 +261,8 @@ describe("owner transactions (/actions/tx/:id/submit)", () => {
     });
     expect((await submit(stranger.address, issued)).status).toBe(403);
 
-    ctx.store.saveOwnerTx({
-      ...(ctx.store.ownerTx("x_test") as object),
+    await ctx.store.saveOwnerTx({
+      ...((await ctx.store.ownerTx("x_test")) as object),
       id: "x_test",
       status: "sent",
     });
@@ -359,7 +362,7 @@ describe("Telegram", () => {
       } as never,
       transformer,
     });
-    const link = telegram.linkUrl();
+    const link = await telegram.linkUrl();
     expect(link).toMatch(/^https:\/\/t\.me\/syndromi_bot\?start=\w{16}$/);
     const code = new URL(String(link)).searchParams.get("start");
     const start = (chatId: number, text: string) =>
@@ -379,7 +382,7 @@ describe("Telegram", () => {
     expect(calls.at(-1)?.payload.text).toMatch(/private/);
     await start(42, `/start ${code}`);
     expect(calls.at(-1)?.payload.text).toMatch(/^Linked/);
-    expect(telegram.linkUrl()).toBeUndefined();
+    expect(await telegram.linkUrl()).toBeUndefined();
 
     const { id } = await newDraft();
     await new Promise((r) => setTimeout(r, 0));

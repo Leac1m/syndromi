@@ -262,7 +262,7 @@ watcher (no LLM): re-verify the owner signature locally → re-run the tool (fre
 - Executing an approved draft still goes through the policy signer; `block` stays final.
 
 Components:
-- `apps/server`: Hono + `node:sqlite`, `@solana/actions-spec` types only;
+- `apps/server`: Hono + `node:sqlite` (Postgres when `DATABASE_URL` is set), `@solana/actions-spec` types only;
 - `packages/core/src/approval.ts`: `draftHash`, `approvalMessage`, `verifyOwnerApproval`;
 - `packages/runtime/src/{server-client,watcher}.ts`;
 - CLI: `run --server`, `watch`, `approve`, `request-topup`, and `pnpm server`.

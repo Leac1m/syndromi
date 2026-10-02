@@ -10,12 +10,12 @@ import type { ServerContext } from "./context.js";
 const CHAINS = { devnet: "solana:devnet", mainnet: "solana:mainnet", fork: "solana:mainnet" };
 
 export function mountApprovePage(app: Hono, ctx: ServerContext) {
-  app.get("/approve/:id", (c) => {
+  app.get("/approve/:id", async (c) => {
     const id = c.req.param("id");
     const record = id.startsWith("d_")
-      ? ctx.store.draft(id)
+      ? await ctx.store.draft(id)
       : id.startsWith("t_")
-        ? ctx.store.topUp(id)
+        ? await ctx.store.topUp(id)
         : undefined;
     if (!record) return c.text("No such approval request.", 404);
     const kind = id.startsWith("d_") ? "draft" : "topup";

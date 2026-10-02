@@ -6,6 +6,7 @@ import type { ActionGetResponse, CompletedAction } from "@solana/actions-spec";
 import { grantTopUp, tokenByMint, toUiAmount } from "@syndromi/core";
 import type { Context, Hono } from "hono";
 import type { ServerContext } from "../context.js";
+import { StatusChanged } from "../db.js";
 import { issueOwnerTx, onOwnerTxLanded } from "../owner-tx.js";
 import { checkTopUp } from "../sweeper.js";
 import { actionError, actionJson } from "./spec.js";
@@ -21,17 +22,23 @@ export function mountApproveTopUp(app: Hono, ctx: ServerContext, icon: string) {
   const { store } = ctx;
   const path = (id: string) => `/actions/approve-topup/${id}`;
 
-  const load = (c: Context) => {
-    const topup = store.topUp(c.req.param("id") ?? "");
+  const load = async (c: Context) => {
+    const topup = await store.topUp(c.req.param("id") ?? "");
     if (!topup) return { error: actionError(c, "No such top-up request", 404) };
     if (topup.status === "pending" && Date.parse(topup.expiresAt) < Date.now()) {
-      return { topup: store.updateTopUp(topup.id, { status: "expired" }) };
+      const expired = await store
+        .updateTopUp(topup.id, { status: "expired" }, ["pending"])
+        .catch(async (e) => {
+          if (e instanceof StatusChanged) return (await store.topUp(topup.id)) ?? topup;
+          throw e;
+        });
+      return { topup: expired };
     }
     return { topup };
   };
 
-  app.get(path(":id"), (c) => {
-    const { topup, error } = load(c);
+  app.get(path(":id"), async (c) => {
+    const { topup, error } = await load(c);
     if (!topup) return error;
     const fork = topup.cluster === "fork" ? " (fork agent: approve with `syndromi approve`)" : "";
     const body: ActionGetResponse = {
@@ -53,7 +60,7 @@ export function mountApproveTopUp(app: Hono, ctx: ServerContext, icon: string) {
   });
 
   app.post(path(":id"), async (c) => {
-    const { topup, error } = load(c);
+    const { topup, error } = await load(c);
     if (!topup) return error;
     if (topup.status !== "pending") return actionError(c, `This request is ${topup.status}.`, 409);
     const { account } = (await c.req.json().catch(() => ({}))) as { account?: string };
@@ -67,7 +74,7 @@ export function mountApproveTopUp(app: Hono, ctx: ServerContext, icon: string) {
         amount: topup.amount,
         expiresInSeconds: TOPUP_EXPIRY_S,
       });
-      store.updateTopUp(topup.id, { delegation: built.delegation });
+      await store.updateTopUp(topup.id, { delegation: built.delegation });
       const response = await issueOwnerTx(ctx, {
         owner: topup.owner,
         cluster: topup.cluster,
@@ -83,7 +90,7 @@ export function mountApproveTopUp(app: Hono, ctx: ServerContext, icon: string) {
   });
 
   onOwnerTxLanded(ctx, "topup", async (tx, signature) => {
-    const topup = store.topUp(tx.ref);
+    const topup = await store.topUp(tx.ref);
     const updated = topup ? await checkTopUp(ctx, topup, signature) : undefined;
     const approved = updated?.status === "approved";
     const done: CompletedAction = {

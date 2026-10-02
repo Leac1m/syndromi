@@ -22,9 +22,11 @@
     "@syndromi/runtime": "workspace:*",
     "@syndromi/tools": "workspace:*",
     "grammy": "^1.46.0",
-    "hono": "4.13.9"
+    "hono": "4.13.9",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
-    "@solana/actions-spec": "^2.4.2"
+    "@solana/actions-spec": "^2.4.2",
+    "@types/pg": "^8.23.1"
   }
 }

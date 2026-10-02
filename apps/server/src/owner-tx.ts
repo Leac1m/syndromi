@@ -135,7 +135,7 @@ export async function issueOwnerTx(
     status: "issued",
     createdAt: new Date().toISOString(),
   };
-  ctx.store.saveOwnerTx(tx);
+  await ctx.store.saveOwnerTx(tx);
   return {
     type: "transaction",
     transaction: getBase64EncodedWireTransaction(transaction),
@@ -162,7 +162,7 @@ export function mountOwnerTx(app: Hono, ctx: ServerContext, icon: string) {
   };
 
   app.post("/actions/tx/:id/submit", async (c) => {
-    const tx = load(c.req.param("id"));
+    const tx = await load(c.req.param("id"));
     if (!tx) return actionError(c, "Unknown transaction request.", 404);
     if (tx.status !== "issued")
       return actionError(c, "This transaction was already sent.", 409, tx.cluster);
@@ -196,16 +196,16 @@ export function mountOwnerTx(app: Hono, ctx: ServerContext, icon: string) {
       return actionError(c, `Sending failed: ${(e as Error).message}`, 502, tx.cluster);
     }
     const sent = { ...tx, status: "sent" as const, signature };
-    store.saveOwnerTx(sent);
+    await store.saveOwnerTx(sent);
     return actionJson(c, await finish(sent, signature), tx.cluster);
   });
 
   app.post("/actions/tx/:id/confirm", async (c) => {
-    const tx = load(c.req.param("id"));
+    const tx = await load(c.req.param("id"));
     if (!tx) return actionError(c, "Unknown transaction request.", 404);
     const body = (await c.req.json().catch(() => ({}))) as { signature?: string };
     if (body.signature && tx.status === "issued") {
-      store.saveOwnerTx({ ...tx, status: "sent", signature: body.signature });
+      await store.saveOwnerTx({ ...tx, status: "sent", signature: body.signature });
     }
     return actionJson(c, await finish(tx, body.signature ?? tx.signature), tx.cluster);
   });

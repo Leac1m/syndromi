@@ -1,10 +1,12 @@
-// SQLite store (Node's built-in node:sqlite): agents, drafts, top-up requests, activity, and the
-// nonces handed out for owner signatures.
+// The server's store: agents, drafts, top-up requests, activity, and the nonces handed out for
+// owner signatures. SQLite (Node's built-in node:sqlite) on a local file by default; Postgres when
+// given a postgres:// URL (DATABASE_URL), so a hosted server keeps its data across restarts.
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type { Address } from "@solana/kit";
 import type { Cluster, Decision, Intent } from "@syndromi/core";
+import pg from "pg";
 
 export type AgentRecord = {
   name: string;
@@ -81,7 +83,8 @@ export type TopUpRecord = {
   resultError?: string;
 };
 
-const SCHEMA = `
+// One schema for both engines; only the activity sequence column differs.
+const schema = (dialect: Dialect) => `
 create table if not exists agent_records (
   name text primary key, owner text not null, data text not null);
 create table if not exists hosted_keys (name text primary key, data text not null);
@@ -97,8 +100,8 @@ create table if not exists topups (
   id text primary key, agent_name text not null, status text not null, created_at text not null,
   expires_at text not null, data text not null);
 create table if not exists activity (
-  seq integer primary key autoincrement, agent_name text not null, type text not null,
-  at text not null, data text not null);
+  seq ${dialect === "postgres" ? "bigserial primary key" : "integer primary key autoincrement"},
+  agent_name text not null, type text not null, at text not null, data text not null);
 create table if not exists sign_requests (
   nonce text primary key, draft_id text not null, text text not null, created_at text not null,
   used integer not null default 0);
@@ -106,51 +109,219 @@ create table if not exists settings (key text primary key, value text not null);
 create table if not exists owner_txs (id text primary key, data text not null);
 `;
 
-const json = (value: unknown) =>
-  JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
+type Dialect = "sqlite" | "postgres";
+type Param = string | number | null;
 
-export class Store {
-  readonly db: DatabaseSync;
+/** The few query shapes the store needs. Statements use `?` placeholders on both engines. */
+export interface Sql {
+  readonly dialect: Dialect;
+  all<T>(sql: string, params?: Param[]): Promise<T[]>;
+  get<T>(sql: string, params?: Param[]): Promise<T | undefined>;
+  run(sql: string, params?: Param[]): Promise<void>;
+  exec(script: string): Promise<void>;
+  close(): Promise<void>;
+}
+
+class SqliteSql implements Sql {
+  readonly dialect = "sqlite";
+  private readonly db: DatabaseSync;
 
   constructor(path: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec("pragma journal_mode = wal;");
-    this.db.exec(SCHEMA);
+  }
+
+  async all<T>(sql: string, params: Param[] = []) {
+    return this.db.prepare(sql).all(...(params as SQLInputValue[])) as T[];
+  }
+
+  async get<T>(sql: string, params: Param[] = []) {
+    return this.db.prepare(sql).get(...(params as SQLInputValue[])) as T | undefined;
+  }
+
+  async run(sql: string, params: Param[] = []) {
+    this.db.prepare(sql).run(...(params as SQLInputValue[]));
+  }
+
+  async exec(script: string) {
+    this.db.exec(script);
+  }
+
+  async close() {
+    this.db.close();
+  }
+}
+
+class PostgresSql implements Sql {
+  readonly dialect = "postgres";
+  private readonly pool: pg.Pool;
+
+  constructor(url: string, schema?: string) {
+    if (schema !== undefined && !/^[a-z_][a-z0-9_]*$/i.test(schema)) {
+      throw new Error(`not a plain schema name: ${schema}`);
+    }
+    this.pool = new pg.Pool({
+      connectionString: strictSsl(url),
+      max: 5,
+      idleTimeoutMillis: 30_000,
+      ...(schema ? { options: `-c search_path=${schema}` } : {}),
+    });
+    // Hosted Postgres (e.g. Neon) closes idle connections when it scales to zero. The pool drops
+    // the dead client and reconnects on the next query; without a listener the error would crash
+    // the process.
+    this.pool.on("error", (err) =>
+      console.warn(`postgres: idle connection closed (${err.message})`),
+    );
+  }
+
+  private async query<T>(sql: string, params: Param[]) {
+    let n = 0;
+    const text = sql.replace(/\?/g, () => `$${++n}`);
+    return (await this.pool.query(text, params)).rows as T[];
+  }
+
+  all<T>(sql: string, params: Param[] = []) {
+    return this.query<T>(sql, params);
+  }
+
+  async get<T>(sql: string, params: Param[] = []) {
+    return (await this.query<T>(sql, params))[0];
+  }
+
+  async run(sql: string, params: Param[] = []) {
+    await this.query(sql, params);
+  }
+
+  async exec(script: string) {
+    await this.pool.query(script);
+  }
+
+  close() {
+    return this.pool.end();
+  }
+}
+
+/**
+ * pg verifies the server certificate for sslmode=require today, but its next major version will
+ * give `require` libpq's weaker meaning (encrypt, don't verify). Ask for verification explicitly.
+ */
+function strictSsl(url: string) {
+  const parsed = new URL(url);
+  const mode = parsed.searchParams.get("sslmode");
+  if (mode === "prefer" || mode === "require" || mode === "verify-ca") {
+    parsed.searchParams.set("sslmode", "verify-full");
+  }
+  return parsed.toString();
+}
+
+const json = (value: unknown) =>
+  JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
+
+/** A guarded update found the record in another status (someone else changed it first). */
+export class StatusChanged extends Error {
+  constructor(
+    kind: "draft" | "top-up",
+    readonly status: DraftStatus | TopUpStatus,
+  ) {
+    super(`${kind} is ${status}`);
+  }
+}
+
+export class Store {
+  /** The underlying engine, for tests and one-off reads. */
+  readonly sql: Sql;
+  /** Resolves once the schema exists; rejects if the database can't be reached. */
+  readonly ready: Promise<void>;
+  private readonly locks = new Map<string, Promise<unknown>>();
+
+  /**
+   * `target`: a postgres:// (or postgresql://) URL, a SQLite file path, or ":memory:".
+   * `pgSchema`: keep the tables in this (existing) Postgres schema instead of `public`.
+   */
+  constructor(target: string, opts: { pgSchema?: string } = {}) {
+    this.sql = /^postgres(ql)?:\/\//.test(target)
+      ? new PostgresSql(target, opts.pgSchema)
+      : new SqliteSql(target);
+    this.ready = this.sql.exec(schema(this.sql.dialect));
+    this.ready.catch(() => undefined); // reported by whoever awaits it
+  }
+
+  close() {
+    return this.sql.close();
+  }
+
+  private async all<T>(sql: string, params?: Param[]) {
+    await this.ready;
+    return this.sql.all<T>(sql, params);
+  }
+
+  private async get<T>(sql: string, params?: Param[]) {
+    await this.ready;
+    return this.sql.get<T>(sql, params);
+  }
+
+  private async run(sql: string, params?: Param[]) {
+    await this.ready;
+    await this.sql.run(sql, params);
+  }
+
+  /**
+   * Run read-modify-write steps for one key one at a time. Store calls are async, so two updates
+   * to the same draft could otherwise interleave and one patch would be lost. One server process
+   * owns the database, so an in-process lock is enough.
+   */
+  private serialize<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.locks.get(key) ?? Promise.resolve();
+    const next = previous.then(fn, fn);
+    const settled = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.locks.set(key, settled);
+    void settled.then(() => {
+      if (this.locks.get(key) === settled) this.locks.delete(key);
+    });
+    return next;
   }
 
   // ------------------------------------------------------------------ agents
   upsertAgent(agent: AgentRecord) {
-    const previous = this.agent(agent.name);
-    // Registration from a runtime must not erase what the server already knows (e.g. a hosted
-    // agent's manifest), and never moves an agent to a different owner.
-    if (previous && previous.owner !== agent.owner) {
-      throw new Error(`agent ${agent.name} belongs to a different owner`);
-    }
-    const merged = {
-      ...previous,
-      ...agent,
-      registeredAt: previous?.registeredAt ?? agent.registeredAt,
-    };
-    this.db
-      .prepare(
+    return this.serialize(`agent:${agent.name}`, async () => {
+      const previous = await this.agent(agent.name);
+      // Registration from a runtime must not erase what the server already knows (e.g. a hosted
+      // agent's manifest), and never moves an agent to a different owner.
+      if (previous && previous.owner !== agent.owner) {
+        throw new Error(`agent ${agent.name} belongs to a different owner`);
+      }
+      const merged = {
+        ...previous,
+        ...agent,
+        registeredAt: previous?.registeredAt ?? agent.registeredAt,
+      };
+      await this.run(
         `insert into agent_records values (?, ?, ?)
          on conflict(name) do update set owner = excluded.owner, data = excluded.data`,
-      )
-      .run(agent.name, agent.owner, json(merged));
+        [agent.name, agent.owner, json(merged)],
+      );
+    });
   }
 
-  agent(name: string): AgentRecord | undefined {
-    const row = this.db.prepare("select data from agent_records where name = ?").get(name) as
-      | { data: string }
-      | undefined;
+  async agent(name: string): Promise<AgentRecord | undefined> {
+    const row = await this.get<{ data: string }>("select data from agent_records where name = ?", [
+      name,
+    ]);
     return row ? (JSON.parse(row.data) as AgentRecord) : undefined;
   }
 
-  agents(owner?: string): AgentRecord[] {
-    const rows = this.db
-      .prepare("select data from agent_records where (?1 is null or owner = ?1) order by name")
-      .all(owner ?? null) as { data: string }[];
+  async agents(owner?: string): Promise<AgentRecord[]> {
+    const rows =
+      owner === undefined
+        ? await this.all<{ data: string }>("select data from agent_records order by name")
+        : await this.all<{ data: string }>(
+            "select data from agent_records where owner = ? order by name",
+            [owner],
+          );
     return rows.map((r) => JSON.parse(r.data) as AgentRecord);
   }
 
@@ -158,135 +329,141 @@ export class Store {
    * Remove an agent's record. A hosted key is archived under `removed/<name>/<time>`, never
    * deleted: its wallet may still hold SOL or tokens.
    */
-  removeAgent(name: string) {
-    this.db
-      .prepare("update hosted_keys set name = ? where name = ?")
-      .run(`removed/${name}/${new Date().toISOString()}`, name);
-    this.db.prepare("delete from agent_records where name = ?").run(name);
+  async removeAgent(name: string) {
+    await this.run("update hosted_keys set name = ? where name = ?", [
+      `removed/${name}/${new Date().toISOString()}`,
+      name,
+    ]);
+    await this.run("delete from agent_records where name = ?", [name]);
   }
 
-  saveHostedKey(name: string, encrypted: unknown) {
-    this.db
-      .prepare(
-        "insert into hosted_keys values (?, ?) on conflict(name) do update set data = excluded.data",
-      )
-      .run(name, JSON.stringify(encrypted));
+  async saveHostedKey(name: string, encrypted: unknown) {
+    await this.run(
+      "insert into hosted_keys values (?, ?) on conflict(name) do update set data = excluded.data",
+      [name, JSON.stringify(encrypted)],
+    );
   }
 
-  hostedKey(name: string): unknown {
-    const row = this.db.prepare("select data from hosted_keys where name = ?").get(name) as
-      | { data: string }
-      | undefined;
+  async hostedKey(name: string): Promise<unknown> {
+    const row = await this.get<{ data: string }>("select data from hosted_keys where name = ?", [
+      name,
+    ]);
     return row ? JSON.parse(row.data) : undefined;
   }
 
   // ------------------------------------------------------------------ owner sessions
-  issueLoginNonce(nonce: string, owner: string, text: string) {
-    this.db
-      .prepare("insert into login_nonces (nonce, owner, text, created_at) values (?, ?, ?, ?)")
-      .run(nonce, owner, text, new Date().toISOString());
+  async issueLoginNonce(nonce: string, owner: string, text: string) {
+    await this.run(
+      "insert into login_nonces (nonce, owner, text, created_at) values (?, ?, ?, ?)",
+      [nonce, owner, text, new Date().toISOString()],
+    );
   }
 
-  consumeLoginNonce(nonce: string, owner: string): string | undefined {
-    const row = this.db
-      .prepare("select text, owner, used from login_nonces where nonce = ?")
-      .get(nonce) as { text: string; owner: string; used: number } | undefined;
-    if (!row || row.used || row.owner !== owner) return undefined;
-    this.db.prepare("update login_nonces set used = 1 where nonce = ?").run(nonce);
-    return row.text;
+  /** Marks the nonce used in the same statement that reads it, so it works exactly once. */
+  async consumeLoginNonce(nonce: string, owner: string): Promise<string | undefined> {
+    const row = await this.get<{ text: string }>(
+      "update login_nonces set used = 1 where nonce = ? and owner = ? and used = 0 returning text",
+      [nonce, owner],
+    );
+    return row?.text;
   }
 
-  createSession(token: string, owner: string, expiresAt: string) {
-    this.db.prepare("insert into sessions values (?, ?, ?)").run(token, owner, expiresAt);
+  async createSession(token: string, owner: string, expiresAt: string) {
+    await this.run("insert into sessions values (?, ?, ?)", [token, owner, expiresAt]);
   }
 
-  sessionOwner(token: string, now = new Date()): string | undefined {
-    const row = this.db
-      .prepare("select owner, expires_at from sessions where token = ?")
-      .get(token) as { owner: string; expires_at: string } | undefined;
+  async sessionOwner(token: string, now = new Date()): Promise<string | undefined> {
+    const row = await this.get<{ owner: string; expires_at: string }>(
+      "select owner, expires_at from sessions where token = ?",
+      [token],
+    );
     if (!row || Date.parse(row.expires_at) < now.getTime()) return undefined;
     return row.owner;
   }
 
   // ------------------------------------------------------------------ drafts
-  saveDraft(draft: DraftRecord) {
-    this.db
-      .prepare(
-        `insert into drafts values (?, ?, ?, ?, ?, ?)
-         on conflict(id) do update set status = excluded.status, data = excluded.data`,
-      )
-      .run(draft.id, draft.agentName, draft.status, draft.createdAt, draft.expiresAt, json(draft));
+  async saveDraft(draft: DraftRecord) {
+    await this.run(
+      `insert into drafts values (?, ?, ?, ?, ?, ?)
+       on conflict(id) do update set status = excluded.status, data = excluded.data`,
+      [draft.id, draft.agentName, draft.status, draft.createdAt, draft.expiresAt, json(draft)],
+    );
   }
 
-  draft(id: string): DraftRecord | undefined {
-    const row = this.db.prepare("select data from drafts where id = ?").get(id) as
-      | { data: string }
-      | undefined;
+  async draft(id: string): Promise<DraftRecord | undefined> {
+    const row = await this.get<{ data: string }>("select data from drafts where id = ?", [id]);
     return row ? reviveDraft(row.data) : undefined;
   }
 
-  drafts(filter: { agentName?: string; status?: DraftStatus } = {}): DraftRecord[] {
-    const rows = this.db
-      .prepare(
-        `select data from drafts where (?1 is null or agent_name = ?1)
-         and (?2 is null or status = ?2) order by created_at`,
-      )
-      .all(filter.agentName ?? null, filter.status ?? null) as { data: string }[];
+  async drafts(filter: { agentName?: string; status?: DraftStatus } = {}): Promise<DraftRecord[]> {
+    const rows = await this.all<{ data: string }>(
+      ...filtered("drafts", { agent_name: filter.agentName, status: filter.status }),
+    );
     return rows.map((r) => reviveDraft(r.data));
   }
 
-  updateDraft(id: string, patch: Partial<DraftRecord>): DraftRecord {
-    const current = this.draft(id);
-    if (!current) throw new Error(`no draft ${id}`);
-    const next = { ...current, ...patch };
-    this.saveDraft(next);
-    return next;
+  /** With `from`, the update applies only while the draft is in one of those statuses. */
+  updateDraft(id: string, patch: Partial<DraftRecord>, from?: DraftStatus[]): Promise<DraftRecord> {
+    return this.serialize(`draft:${id}`, async () => {
+      const current = await this.draft(id);
+      if (!current) throw new Error(`no draft ${id}`);
+      if (from && !from.includes(current.status)) throw new StatusChanged("draft", current.status);
+      const next = { ...current, ...patch };
+      await this.saveDraft(next);
+      return next;
+    });
   }
 
   // ------------------------------------------------------------------ top-ups
-  saveTopUp(topup: TopUpRecord) {
-    this.db
-      .prepare(
-        `insert into topups values (?, ?, ?, ?, ?, ?)
-         on conflict(id) do update set status = excluded.status, data = excluded.data`,
-      )
-      .run(topup.id, topup.agentName, topup.status, topup.createdAt, topup.expiresAt, json(topup));
+  async saveTopUp(topup: TopUpRecord) {
+    await this.run(
+      `insert into topups values (?, ?, ?, ?, ?, ?)
+       on conflict(id) do update set status = excluded.status, data = excluded.data`,
+      [topup.id, topup.agentName, topup.status, topup.createdAt, topup.expiresAt, json(topup)],
+    );
   }
 
-  topUp(id: string): TopUpRecord | undefined {
-    const row = this.db.prepare("select data from topups where id = ?").get(id) as
-      | { data: string }
-      | undefined;
+  async topUp(id: string): Promise<TopUpRecord | undefined> {
+    const row = await this.get<{ data: string }>("select data from topups where id = ?", [id]);
     return row ? reviveTopUp(row.data) : undefined;
   }
 
-  topUps(filter: { agentName?: string; status?: TopUpStatus } = {}): TopUpRecord[] {
-    const rows = this.db
-      .prepare(
-        `select data from topups where (?1 is null or agent_name = ?1)
-         and (?2 is null or status = ?2) order by created_at`,
-      )
-      .all(filter.agentName ?? null, filter.status ?? null) as { data: string }[];
+  async topUps(filter: { agentName?: string; status?: TopUpStatus } = {}): Promise<TopUpRecord[]> {
+    const rows = await this.all<{ data: string }>(
+      ...filtered("topups", { agent_name: filter.agentName, status: filter.status }),
+    );
     return rows.map((r) => reviveTopUp(r.data));
   }
 
-  updateTopUp(id: string, patch: Partial<TopUpRecord>): TopUpRecord {
-    const current = this.topUp(id);
-    if (!current) throw new Error(`no top-up ${id}`);
-    const next = { ...current, ...patch };
-    this.saveTopUp(next);
-    return next;
+  /** With `from`, the update applies only while the top-up is in one of those statuses. */
+  updateTopUp(id: string, patch: Partial<TopUpRecord>, from?: TopUpStatus[]): Promise<TopUpRecord> {
+    return this.serialize(`topup:${id}`, async () => {
+      const current = await this.topUp(id);
+      if (!current) throw new Error(`no top-up ${id}`);
+      if (from && !from.includes(current.status)) throw new StatusChanged("top-up", current.status);
+      const next = { ...current, ...patch };
+      await this.saveTopUp(next);
+      return next;
+    });
   }
 
   // ------------------------------------------------------------------ activity
+  /** Events are written one at a time, so the feed's sequence follows the order of calls. */
   addActivity(agentName: string, event: { type: string; at: string } & Record<string, unknown>) {
-    this.db
-      .prepare("insert into activity (agent_name, type, at, data) values (?, ?, ?, ?)")
-      .run(agentName, event.type, event.at, json(event));
+    return this.serialize("activity", () =>
+      this.run("insert into activity (agent_name, type, at, data) values (?, ?, ?, ?)", [
+        agentName,
+        event.type,
+        event.at,
+        json(event),
+      ]),
+    );
   }
 
   /** Newest first, or (with `after`) everything newer than a sequence number, oldest first. */
-  activity(opts: { agentNames?: string[]; after?: number; limit?: number } = {}) {
+  async activity(
+    opts: { agentNames?: string[]; after?: number; limit?: number } = {},
+  ): Promise<ActivityRow[]> {
     const names = opts.agentNames;
     if (names && names.length === 0) return [];
     const placeholders = names ? names.map(() => "?").join(", ") : "";
@@ -300,68 +477,77 @@ export class Store {
       ...(opts.after !== undefined ? [opts.after] : []),
       opts.limit ?? 100,
     ];
-    const rows = this.db
-      .prepare(
-        `select seq, agent_name, data from activity where ${where} order by seq ${order} limit ?`,
-      )
-      .all(...params) as { seq: number; agent_name: string; data: string }[];
+    const rows = await this.all<{ seq: number | string; agent_name: string; data: string }>(
+      `select seq, agent_name, data from activity where ${where} order by seq ${order} limit ?`,
+      params,
+    );
     return rows.map(
       (r): ActivityRow => ({
         ...(JSON.parse(r.data) as Record<string, unknown>),
-        seq: r.seq,
+        seq: Number(r.seq), // Postgres returns bigserial values as strings
         agentName: r.agent_name,
       }),
     );
   }
 
   // ------------------------------------------------------------------ signing nonces
-  issueSignRequest(nonce: string, draftId: string, text: string) {
-    this.db
-      .prepare("insert into sign_requests (nonce, draft_id, text, created_at) values (?, ?, ?, ?)")
-      .run(nonce, draftId, text, new Date().toISOString());
+  async issueSignRequest(nonce: string, draftId: string, text: string) {
+    await this.run(
+      "insert into sign_requests (nonce, draft_id, text, created_at) values (?, ?, ?, ?)",
+      [nonce, draftId, text, new Date().toISOString()],
+    );
   }
 
   /** Returns the issued text and marks the nonce used, or undefined if unknown/used/mismatched. */
-  consumeSignRequest(nonce: string, draftId: string): string | undefined {
-    const row = this.db
-      .prepare("select text, used, draft_id from sign_requests where nonce = ?")
-      .get(nonce) as { text: string; used: number; draft_id: string } | undefined;
-    if (!row || row.used || row.draft_id !== draftId) return undefined;
-    this.db.prepare("update sign_requests set used = 1 where nonce = ?").run(nonce);
-    return row.text;
+  async consumeSignRequest(nonce: string, draftId: string): Promise<string | undefined> {
+    const row = await this.get<{ text: string }>(
+      "update sign_requests set used = 1 where nonce = ? and draft_id = ? and used = 0 returning text",
+      [nonce, draftId],
+    );
+    return row?.text;
   }
 
   // ------------------------------------------------------------------ owner transactions
-  saveOwnerTx(tx: { id: string } & Record<string, unknown>) {
-    this.db
-      .prepare(
-        "insert into owner_txs values (?, ?) on conflict(id) do update set data = excluded.data",
-      )
-      .run(tx.id, json(tx));
+  async saveOwnerTx(tx: { id: string } & Record<string, unknown>) {
+    await this.run(
+      "insert into owner_txs values (?, ?) on conflict(id) do update set data = excluded.data",
+      [tx.id, json(tx)],
+    );
   }
 
-  ownerTx<T>(id: string): T | undefined {
-    const row = this.db.prepare("select data from owner_txs where id = ?").get(id) as
-      | { data: string }
-      | undefined;
+  async ownerTx<T>(id: string): Promise<T | undefined> {
+    const row = await this.get<{ data: string }>("select data from owner_txs where id = ?", [id]);
     return row ? (JSON.parse(row.data) as T) : undefined;
   }
 
   // ------------------------------------------------------------------ settings
-  setting(key: string): string | undefined {
-    const row = this.db.prepare("select value from settings where key = ?").get(key) as
-      | { value: string }
-      | undefined;
+  async setting(key: string): Promise<string | undefined> {
+    const row = await this.get<{ value: string }>("select value from settings where key = ?", [
+      key,
+    ]);
     return row?.value;
   }
 
-  setSetting(key: string, value: string) {
-    this.db
-      .prepare(
-        "insert into settings values (?, ?) on conflict(key) do update set value = excluded.value",
-      )
-      .run(key, value);
+  async setSetting(key: string, value: string) {
+    await this.run(
+      "insert into settings values (?, ?) on conflict(key) do update set value = excluded.value",
+      [key, value],
+    );
   }
+
+  async deleteSetting(key: string) {
+    await this.run("delete from settings where key = ?", [key]);
+  }
+}
+
+/** `select data from <table>` with optional equality filters, oldest first. */
+function filtered(
+  table: "drafts" | "topups",
+  where: Record<string, string | undefined>,
+): [string, Param[]] {
+  const set = Object.entries(where).filter((e): e is [string, string] => e[1] !== undefined);
+  const clause = set.length ? ` where ${set.map(([column]) => `${column} = ?`).join(" and ")}` : "";
+  return [`select data from ${table}${clause} order by created_at`, set.map(([, v]) => v)];
 }
 
 function reviveDraft(data: string): DraftRecord {

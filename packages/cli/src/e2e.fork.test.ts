@@ -131,15 +131,15 @@ describe.skipIf(!surfpoolUp)("approvals end to end on the fork", () => {
     expect(summary.sent).toHaveLength(1); // the pull
     const [draftId] = summary.drafts;
     expect(draftId).toMatch(/^d_/);
-    expect(store.draft(String(draftId))?.status).toBe("pending");
+    expect((await store.draft(String(draftId)))?.status).toBe("pending");
 
     // 2. The owner approves through the Actions endpoints (sign-message), from the terminal.
     await main(["approve", String(draftId)], io, env);
-    expect(store.draft(String(draftId))?.status).toBe("approved");
+    expect((await store.draft(String(draftId)))?.status).toBe("approved");
 
     // 3. The watcher re-verifies, re-quotes, and executes on the fork.
     await main(["watch", dir, "--once", "--fork"], io, env);
-    const executed = store.draft(String(draftId));
+    const executed = await store.draft(String(draftId));
     expect(executed?.status, executed?.resultError).toBe("executed");
     expect(executed?.resultSignature).toBeTruthy();
 
@@ -149,12 +149,12 @@ describe.skipIf(!surfpoolUp)("approvals end to end on the fork", () => {
       io,
       env,
     );
-    const [topup] = store.topUps({ agentName: "yield-scout" });
+    const [topup] = await store.topUps({ agentName: "yield-scout" });
     expect(topup?.status).toBe("pending");
     await main(["approve", String(topup?.id), "--fork"], io, env);
-    expect(store.topUp(String(topup?.id))?.status).toBe("approved");
+    expect((await store.topUp(String(topup?.id)))?.status).toBe("approved");
     await main(["watch", dir, "--once", "--fork"], io, env);
-    const pulled = store.topUp(String(topup?.id));
+    const pulled = await store.topUp(String(topup?.id));
     expect(pulled?.status, pulled?.resultError).toBe("pulled");
 
     // 5. A local agent registered from the CLI is funded through the fund-agent Action (what the
@@ -165,7 +165,10 @@ describe.skipIf(!surfpoolUp)("approvals end to end on the fork", () => {
       io,
       env,
     );
-    expect(store.agent("dca-agent")).toMatchObject({ runtime: "local", allowance: { amount: 20 } });
+    expect(await store.agent("dca-agent")).toMatchObject({
+      runtime: "local",
+      allowance: { amount: 20 },
+    });
     await main(["action", "/actions/fund-agent/dca-agent", "--fork"], io, env);
     const funded = await listDelegations(agent.rpc, ownerKey.signer.address);
     expect(funded.filter((d) => d.kind === "allowance")).toHaveLength(2);
@@ -239,19 +242,19 @@ describe.skipIf(!surfpoolUp)("approvals end to end on the fork", () => {
         io,
         env,
       );
-      expect(hostedStore.agent("yield-scout")).toMatchObject({
+      expect(await hostedStore.agent("yield-scout")).toMatchObject({
         runtime: "hosted",
         cluster: "fork",
       });
       await main(["action", "/actions/fund-agent/yield-scout", "--fork"], io, env);
 
       await hosted.runAndWait("yield-scout");
-      const [draft] = hostedStore.drafts({ agentName: "yield-scout" });
+      const [draft] = await hostedStore.drafts({ agentName: "yield-scout" });
       expect(draft?.status).toBe("pending");
 
       await main(["approve", String(draft?.id)], io, env);
       await hosted.watchAll();
-      const executed = hostedStore.draft(String(draft?.id));
+      const executed = await hostedStore.draft(String(draft?.id));
       expect(executed?.status, executed?.resultError).toBe("executed");
     } finally {
       hosted.stop();

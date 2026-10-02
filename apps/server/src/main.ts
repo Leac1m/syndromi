@@ -19,7 +19,17 @@ if (!token) {
   process.exit(1);
 }
 
-const store = new Store(env.SYNDROMI_DB ?? join(syndromiHome(env.SYNDROMI_HOME), "server.db"));
+// DATABASE_URL (Postgres) when hosted, so data survives restarts; a local SQLite file otherwise.
+const target =
+  env.DATABASE_URL || env.SYNDROMI_DB || join(syndromiHome(env.SYNDROMI_HOME), "server.db");
+const store = new Store(target);
+try {
+  await store.ready;
+} catch (e) {
+  console.error(`Could not open the database (${describeTarget(target)}): ${(e as Error).message}`);
+  process.exit(1);
+}
+console.log(`Database: ${describeTarget(target)}`);
 const ctx = createContext(store, {
   publicUrl: (env.PUBLIC_URL || `http://127.0.0.1:${port}`).replace(/\/+$/, ""),
   token,
@@ -48,7 +58,7 @@ if ((env.SYNDROMI_HOSTED_SECRET ?? "").length >= 32) {
 if (env.TELEGRAM_BOT_TOKEN) {
   const telegram = await createTelegram(ctx, { token: env.TELEGRAM_BOT_TOKEN });
   await telegram.start();
-  const link = telegram.linkUrl();
+  const link = await telegram.linkUrl();
   console.log(
     link
       ? `Telegram: open ${link} and press Start to receive approvals.`
@@ -57,4 +67,15 @@ if (env.TELEGRAM_BOT_TOKEN) {
   process.once("SIGINT", () => void telegram.stop().then(() => process.exit(0)));
 } else {
   console.log("Telegram: disabled (TELEGRAM_BOT_TOKEN not set).");
+}
+
+/** Where the data lives, without credentials. */
+function describeTarget(target: string) {
+  if (!/^postgres(ql)?:\/\//.test(target)) return `SQLite ${target}`;
+  try {
+    const url = new URL(target);
+    return `Postgres ${url.hostname}${url.pathname}`;
+  } catch {
+    return "Postgres";
+  }
 }

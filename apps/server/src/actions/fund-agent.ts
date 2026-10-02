@@ -34,21 +34,21 @@ export function mountFundAgent(app: Hono, ctx: ServerContext, icon: string) {
     links: { actions: [{ type: "transaction", href: path(agent.name), label: "Sign & fund" }] },
   });
 
-  const load = (c: Context) => {
-    const agent = store.agent(decodeURIComponent(c.req.param("name") ?? ""));
+  const load = async (c: Context) => {
+    const agent = await store.agent(decodeURIComponent(c.req.param("name") ?? ""));
     return agent?.allowance && agent.feeBudgetSol !== undefined ? agent : undefined;
   };
 
   const route = "/actions/fund-agent/:name";
 
-  app.get(route, (c) => {
-    const agent = load(c);
+  app.get(route, async (c) => {
+    const agent = await load(c);
     if (!agent) return actionError(c, "No such agent, or it has no allowance to grant.", 404);
     return actionJson(c, card(agent), agent.cluster);
   });
 
   app.post(route, async (c) => {
-    const agent = load(c);
+    const agent = await load(c);
     if (!agent?.allowance || agent.feeBudgetSol === undefined) {
       return actionError(c, "No such agent, or it has no allowance to grant.", 404);
     }
@@ -125,12 +125,12 @@ export function mountFundAgent(app: Hono, ctx: ServerContext, icon: string) {
 
   // Setup landed: chain back to this Action for the grant.
   onOwnerTxLanded(ctx, "fund-setup", async (tx) => {
-    const agent = store.agent(tx.ref);
+    const agent = await store.agent(tx.ref);
     if (!agent) return done("Set up", "Your bag can now grant allowances.");
     return card(agent, "Step 2 of 2: grant the allowance and send the fee budget.");
   });
   onOwnerTxLanded(ctx, "fund", async (tx) => {
-    ctx.store.addActivity(tx.ref, {
+    await ctx.store.addActivity(tx.ref, {
       type: "approval",
       at: new Date().toISOString(),
       kind: "fund",

@@ -3,7 +3,7 @@
 import type { Address } from "@solana/kit";
 import type { Decision, Intent } from "@syndromi/core";
 import { newId, type ServerContext } from "./context.js";
-import type { DraftRecord, TopUpRecord } from "./db.js";
+import { type DraftRecord, StatusChanged, type TopUpRecord } from "./db.js";
 
 export type DraftInput = {
   agentName: string;
@@ -24,8 +24,8 @@ export class RecordError extends Error {
   }
 }
 
-export function createDraft(ctx: ServerContext, body: DraftInput): DraftRecord {
-  const agent = ctx.store.agent(body.agentName);
+export async function createDraft(ctx: ServerContext, body: DraftInput): Promise<DraftRecord> {
+  const agent = await ctx.store.agent(body.agentName);
   if (!agent) throw new RecordError(`unknown agent ${body.agentName}`, 404);
   const now = Date.now();
   const draft: DraftRecord = {
@@ -50,16 +50,16 @@ export function createDraft(ctx: ServerContext, body: DraftInput): DraftRecord {
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + ctx.config.draftTtlMs).toISOString(),
   };
-  ctx.store.saveDraft(draft);
+  await ctx.store.saveDraft(draft);
   ctx.bus.emit("draft", draft);
   return draft;
 }
 
-export function createTopUp(
+export async function createTopUp(
   ctx: ServerContext,
   body: { agentName: string; mint: Address; amount: bigint | string; reason: string },
-): TopUpRecord {
-  const agent = ctx.store.agent(body.agentName);
+): Promise<TopUpRecord> {
+  const agent = await ctx.store.agent(body.agentName);
   if (!agent) throw new RecordError(`unknown agent ${body.agentName}`, 404);
   const now = Date.now();
   const topup: TopUpRecord = {
@@ -75,26 +75,30 @@ export function createTopUp(
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + ctx.config.topUpTtlMs).toISOString(),
   };
-  ctx.store.saveTopUp(topup);
+  await ctx.store.saveTopUp(topup);
   ctx.bus.emit("topup", topup);
   return topup;
 }
 
-export function recordActivity(
+export async function recordActivity(
   ctx: ServerContext,
   agentName: string,
   events: ({ type: string; at: string } & Record<string, unknown>)[],
 ) {
   for (const event of events) {
-    ctx.store.addActivity(agentName, event);
+    await ctx.store.addActivity(agentName, event);
     ctx.bus.emit("activity", agentName, event);
   }
 }
 
 /** What the owner approved for an agent, in the shape the runtime's watcher consumes. */
-export function approvalsFor(ctx: ServerContext, agentName: string) {
+export async function approvalsFor(ctx: ServerContext, agentName: string) {
+  const [drafts, topups] = await Promise.all([
+    ctx.store.drafts({ agentName, status: "approved" }),
+    ctx.store.topUps({ agentName, status: "approved" }),
+  ]);
   return {
-    drafts: ctx.store.drafts({ agentName, status: "approved" }).map((d) => ({
+    drafts: drafts.map((d) => ({
       id: d.id,
       agent: d.agent,
       owner: d.owner,
@@ -107,8 +111,7 @@ export function approvalsFor(ctx: ServerContext, agentName: string) {
       approvalText: d.approvalText ?? "",
       approvalSignature: d.approvalSignature ?? "",
     })),
-    topups: ctx.store
-      .topUps({ agentName, status: "approved" })
+    topups: topups
       .filter((t): t is TopUpRecord & { delegation: Address } => Boolean(t.delegation))
       .map((t) => ({
         id: t.id,
@@ -121,50 +124,69 @@ export function approvalsFor(ctx: ServerContext, agentName: string) {
   };
 }
 
-export function reportDraft(
+export async function reportDraft(
   ctx: ServerContext,
   id: string,
   result: { status: "executed" | "failed" | "stale"; signature?: string; error?: string },
 ) {
-  const draft = ctx.store.draft(id);
+  const draft = await ctx.store.draft(id);
   if (!draft) throw new RecordError("no such draft", 404);
-  if (draft.status !== "approved") throw new RecordError(`draft is ${draft.status}`, 409);
-  const updated = ctx.store.updateDraft(draft.id, {
-    status: result.status,
-    ...(result.signature ? { resultSignature: result.signature } : {}),
-    ...(result.error ? { resultError: result.error } : {}),
-  });
+  const updated = await ctx.store
+    .updateDraft(
+      draft.id,
+      {
+        status: result.status,
+        ...(result.signature ? { resultSignature: result.signature } : {}),
+        ...(result.error ? { resultError: result.error } : {}),
+      },
+      ["approved"],
+    )
+    .catch(conflict);
   ctx.bus.emit("draft", updated);
   return updated;
 }
 
-export function reportTopUp(
+export async function reportTopUp(
   ctx: ServerContext,
   id: string,
   result: { status: "pulled" | "failed"; signature?: string; error?: string },
 ) {
-  const topup = ctx.store.topUp(id);
+  const topup = await ctx.store.topUp(id);
   if (!topup) throw new RecordError("no such top-up", 404);
-  if (topup.status !== "approved") throw new RecordError(`top-up is ${topup.status}`, 409);
-  const updated = ctx.store.updateTopUp(topup.id, {
-    status: result.status,
-    ...(result.signature ? { resultSignature: result.signature } : {}),
-    ...(result.error ? { resultError: result.error } : {}),
-  });
+  const updated = await ctx.store
+    .updateTopUp(
+      topup.id,
+      {
+        status: result.status,
+        ...(result.signature ? { resultSignature: result.signature } : {}),
+        ...(result.error ? { resultError: result.error } : {}),
+      },
+      ["approved"],
+    )
+    .catch(conflict);
   ctx.bus.emit("topup", updated);
   return updated;
 }
 
-export function reject(ctx: ServerContext, kind: "draft" | "topup", id: string) {
-  const record = kind === "draft" ? ctx.store.draft(id) : ctx.store.topUp(id);
+export async function reject(ctx: ServerContext, kind: "draft" | "topup", id: string) {
+  const record = kind === "draft" ? await ctx.store.draft(id) : await ctx.store.topUp(id);
   if (!record) throw new RecordError(`no such ${kind}`, 404);
-  if (record.status !== "pending") throw new RecordError(`${kind} is ${record.status}`, 409);
   if (kind === "draft") {
-    const updated = ctx.store.updateDraft(id, { status: "rejected" });
+    const updated = await ctx.store
+      .updateDraft(id, { status: "rejected" }, ["pending"])
+      .catch(conflict);
     ctx.bus.emit("draft", updated);
     return updated;
   }
-  const updated = ctx.store.updateTopUp(id, { status: "rejected" });
+  const updated = await ctx.store
+    .updateTopUp(id, { status: "rejected" }, ["pending"])
+    .catch(conflict);
   ctx.bus.emit("topup", updated);
   return updated;
+}
+
+/** A guarded update lost to another change: the caller sees the same 409 as before. */
+function conflict(err: unknown): never {
+  if (err instanceof StatusChanged) throw new RecordError(err.message, 409);
+  throw err;
 }

@@ -24,11 +24,11 @@ export function loginMessage(owner: string, nonce: string, issuedAt: Date) {
   ].join("\n");
 }
 
-export function challenge(store: Store, owner: string) {
+export async function challenge(store: Store, owner: string) {
   if (!isAddress(owner)) throw new Error("not a Solana address");
   const nonce = crypto.randomUUID();
   const text = loginMessage(owner, nonce, new Date());
-  store.issueLoginNonce(nonce, owner, text);
+  await store.issueLoginNonce(nonce, owner, text);
   return { nonce, text };
 }
 
@@ -37,7 +37,7 @@ export async function signIn(
   args: { owner: string; nonce: string; signature: string },
   now = new Date(),
 ): Promise<{ token: string; owner: string; expiresAt: string }> {
-  const text = store.consumeLoginNonce(args.nonce, args.owner);
+  const text = await store.consumeLoginNonce(args.nonce, args.owner);
   if (!text) throw new Error("unknown or used sign-in request");
   const issued = Date.parse(
     text
@@ -59,6 +59,6 @@ export async function signIn(
   }
   const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll("-", "");
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS).toISOString();
-  store.createSession(token, args.owner, expiresAt);
+  await store.createSession(token, args.owner, expiresAt);
   return { token, owner: args.owner, expiresAt };
 }

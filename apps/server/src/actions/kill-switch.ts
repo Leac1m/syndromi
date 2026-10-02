@@ -56,8 +56,9 @@ export function mountKillSwitch(app: Hono, ctx: ServerContext, icon: string) {
 
   onOwnerTxLanded(ctx, "kill", async (tx) => {
     const left = await listDelegations(ctx.rpc(tx.cluster), tx.owner).catch(() => []);
-    for (const agent of ctx.store.agents(tx.owner).filter((a) => a.cluster === tx.cluster)) {
-      ctx.store.addActivity(agent.name, {
+    const agents = await ctx.store.agents(tx.owner);
+    for (const agent of agents.filter((a) => a.cluster === tx.cluster)) {
+      await ctx.store.addActivity(agent.name, {
         type: "approval",
         at: new Date().toISOString(),
         kind: "kill",

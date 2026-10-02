@@ -42,3 +42,5 @@ pnpm-debug.log*
 /mcp-agent/
 /dca-agent/
 /yield-scout/
+# local Vercel link (vercel link)
+.vercel

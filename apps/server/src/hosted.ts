@@ -216,6 +216,14 @@ export class HostedRuntime {
     }
     const a = this.agents.get(name);
     if (!a || a.record.runtime !== "external") return undefined;
+    // The stored record is what the owner sees and funds; the key is what signs. Never act for
+    // one while the other says something else.
+    const current = await this.ctx.store.agent(name);
+    if (!current || current.address !== a.agent.ctx.agent) {
+      this.unload(name);
+      this.opts.log?.(`hosted: ${name} record and key disagree; unloaded`);
+      return undefined;
+    }
     return {
       manifest: a.manifest,
       rules: ruleCard(a.manifest),

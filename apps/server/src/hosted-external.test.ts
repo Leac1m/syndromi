@@ -72,9 +72,30 @@ describe("server-held external agent", () => {
     );
     expect(blocked).toContain('"status":"blocked"');
 
+    // Re-registering the same name with another key (say, `syndromi init --server` with a local
+    // key) must not re-point a server-held agent: /me would show one wallet while the tools use
+    // the key the server loaded, and the owner's allowance would sit on the wrong address.
+    const record = await ctx.store.agent("mcp-agent");
+    const stranger = (await generateKeyPairSigner()).address;
+    await expect(
+      ctx.store.upsertAgent({ ...(record as NonNullable<typeof record>), address: stranger }),
+    ).rejects.toThrow(/different address/);
+    expect((await ctx.store.agent("mcp-agent"))?.address).toBe(record?.address);
+
+    // And if a record ever disagrees with the loaded key (changed behind the server's back), the
+    // door refuses instead of acting on a different wallet than the one /me shows.
+    await ctx.store.sql.run("update agent_records set data = ? where name = ?", [
+      JSON.stringify({ ...record, address: stranger }),
+      "mcp-agent",
+    ]);
+    expect(await runtime.remote("mcp-agent", { via: "http", token: "x" })).toBeUndefined();
+    await ctx.store.sql.run("update agent_records set data = ? where name = ?", [
+      JSON.stringify(record),
+      "mcp-agent",
+    ]);
+
     // A name that is not an external server-held agent is not served.
     expect(await runtime.remote("nobody", { via: "http", token: "x" })).toBeUndefined();
-    const record = await ctx.store.agent("mcp-agent");
-    expect(record?.custody).toBe("server");
+    expect((await ctx.store.agent("mcp-agent"))?.custody).toBe("server");
   }, 60_000);
 });

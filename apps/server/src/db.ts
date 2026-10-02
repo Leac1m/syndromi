@@ -363,6 +363,14 @@ export class Store {
       if (previous && previous.owner !== agent.owner) {
         throw new Error(`agent ${agent.name} belongs to a different owner`);
       }
+      // The address is the agent's identity: allowances are granted to it and (for server-held
+      // agents) the loaded key must match it. A new key under the same name needs the old agent
+      // removed first, which also requires its delegations to be revoked.
+      if (previous && previous.address !== agent.address) {
+        throw new Error(
+          `agent ${agent.name} is already registered with a different address; remove it first`,
+        );
+      }
       const merged = {
         ...previous,
         ...agent,

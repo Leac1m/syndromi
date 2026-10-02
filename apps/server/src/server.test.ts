@@ -107,6 +107,27 @@ describe("Actions spec plumbing", () => {
     expect(card.headers.get("x-blockchain-ids")).toMatch(/^solana:/);
   });
 
+  it("refuses to re-register an agent under another address or owner", async () => {
+    const register = (body: Record<string, unknown>) =>
+      api("/api/agents", {
+        name: "yield-scout",
+        address: agent,
+        owner: owner.address,
+        cluster: "fork",
+        allowanceMint: USDC,
+        rules: { maxTxUsd: 25, approveAboveUsd: 10, destinations: ["self"], programs: ["jupiter"] },
+        ...body,
+      });
+    expect((await register({})).status).toBe(200); // the same registration again is fine
+    const moved = await register({ address: (await generateKeyPairSigner()).address });
+    expect(moved.status).toBe(409);
+    expect(await moved.json()).toEqual({
+      error: expect.stringMatching(/different address; remove it first/),
+    });
+    expect((await register({ owner: stranger.address })).status).toBe(409);
+    expect((await ctx.store.agent("yield-scout"))?.address).toBe(agent);
+  });
+
   it("guards the runtime API with the bearer token", async () => {
     expect((await api("/api/agents/yield-scout/approvals", undefined, "wrong")).status).toBe(401);
   });

@@ -290,3 +290,45 @@ describe("hosted agents: deploy and run now", () => {
     expect(again.status).toBe(200);
   });
 });
+
+describe("Connect Telegram", () => {
+  const linkFor = async (owner: string) => ({
+    url: `https://t.me/syndromi_bot?start=code-for-${owner.slice(0, 4)}`,
+    expiresAt: "2026-10-02T00:10:00.000Z",
+  });
+
+  it("needs a session, and reports whether the server has a bot", async () => {
+    expect((await req("/owner/telegram")).status).toBe(401);
+    expect((await req("/owner/telegram/link", { body: {} })).status).toBe(401);
+    const { res } = await signInAs(alice);
+    const { token } = (await res.json()) as { token: string };
+    expect(await (await req("/owner/telegram", { token })).json()).toEqual({
+      enabled: false,
+      chats: 0,
+    });
+    expect((await req("/owner/telegram/link", { token, body: {} })).status).toBe(503);
+  });
+
+  it("issues a link for the signed-in wallet, counts its chats, and disconnects only them", async () => {
+    ctx.telegram = { linkUrlFor: linkFor } as never;
+    const { res } = await signInAs(alice);
+    const { token } = (await res.json()) as { token: string };
+    const link = (await (await req("/owner/telegram/link", { token, body: {} })).json()) as {
+      url: string;
+    };
+    expect(link.url).toContain(`code-for-${alice.address.slice(0, 4)}`);
+
+    await ctx.store.linkTelegram("100", alice.address);
+    await ctx.store.linkTelegram("200", alice.address);
+    await ctx.store.linkTelegram("100", bob.address);
+    expect(await (await req("/owner/telegram", { token })).json()).toEqual({
+      enabled: true,
+      chats: 2,
+    });
+    expect(await (await req("/owner/telegram", { token, method: "DELETE" })).json()).toEqual({
+      unlinked: 2,
+    });
+    expect(await ctx.store.telegramChats(alice.address)).toEqual([]);
+    expect(await ctx.store.telegramChats(bob.address)).toEqual(["100"]);
+  });
+});

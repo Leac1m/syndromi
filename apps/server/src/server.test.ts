@@ -338,8 +338,11 @@ describe("approve page", () => {
 });
 
 describe("Telegram", () => {
-  it("binds the owner's chat with the one-time code, then pushes drafts with a Blink button", async () => {
-    const calls: { method: string; payload: Record<string, unknown> }[] = [];
+  type Call = { method: string; payload: Record<string, unknown> };
+
+  /** A bot whose Telegram API calls are recorded instead of sent. */
+  async function makeBot(webhookSecret?: string) {
+    const calls: Call[] = [];
     const transformer: Transformer = async (_prev, method, payload) => {
       calls.push({ method, payload: payload as Record<string, unknown> });
       return {
@@ -361,33 +364,65 @@ describe("Telegram", () => {
         has_main_web_app: false,
       } as never,
       transformer,
+      ...(webhookSecret ? { webhookSecret } : {}),
     });
-    const link = await telegram.linkUrl();
-    expect(link).toMatch(/^https:\/\/t\.me\/syndromi_bot\?start=\w{16}$/);
-    const code = new URL(String(link)).searchParams.get("start");
-    const start = (chatId: number, text: string) =>
+    const update = (chatId: number, text: string) => ({
+      update_id: Math.floor(Math.random() * 1e9),
+      message: {
+        message_id: 1,
+        date: 0,
+        chat: { id: chatId, type: "private", first_name: "x" },
+        from: { id: chatId, is_bot: false, first_name: "x" },
+        text,
+        entities: text.startsWith("/")
+          ? [{ type: "bot_command", offset: 0, length: text.split(" ")[0]?.length }]
+          : [],
+      },
+    });
+    const say = (chatId: number, text: string) =>
+      telegram.bot.handleUpdate(update(chatId, text) as never);
+    const press = (chatId: number, data: string) =>
       telegram.bot.handleUpdate({
-        update_id: chatId,
-        message: {
-          message_id: 1,
-          date: 0,
-          chat: { id: chatId, type: "private", first_name: "x" },
+        update_id: Math.floor(Math.random() * 1e9),
+        callback_query: {
+          id: "cb",
           from: { id: chatId, is_bot: false, first_name: "x" },
-          text,
-          entities: [{ type: "bot_command", offset: 0, length: 6 }],
+          chat_instance: "x",
+          data,
+          message: { message_id: 1, date: 0, chat: { id: chatId, type: "private" } },
         },
       } as never);
+    /** Messages sent to one chat, oldest first. */
+    const sentTo = (chatId: number) =>
+      calls.filter(
+        (c) => c.method === "sendMessage" && String(c.payload.chat_id) === String(chatId),
+      );
+    const answers = () => calls.filter((c) => c.method === "answerCallbackQuery");
+    const link = async (chatId: number, who = owner.address) => {
+      const { url } = await telegram.linkUrlFor(who);
+      await say(chatId, `/start ${new URL(url).searchParams.get("start")}`);
+    };
+    return { telegram, calls, update, say, press, sentTo, answers, link };
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 25));
 
-    await start(666, "/start wrongcode");
-    expect(calls.at(-1)?.payload.text).toMatch(/private/);
-    await start(42, `/start ${code}`);
-    expect(calls.at(-1)?.payload.text).toMatch(/^Linked/);
-    expect(await telegram.linkUrl()).toBeUndefined();
+  it("links a chat to the signed-in wallet with a one-time code, then pushes drafts to it", async () => {
+    const b = await makeBot();
+    const { url } = await b.telegram.linkUrlFor(owner.address);
+    expect(url).toMatch(/^https:\/\/t\.me\/syndromi_bot\?start=\w{24}$/);
+    const code = new URL(url).searchParams.get("start");
+
+    await b.say(666, "/start wrongcode");
+    expect(b.sentTo(666).at(-1)?.payload.text).toMatch(/expired or was already used/);
+    await b.say(42, `/start ${code}`);
+    expect(b.sentTo(42).at(-1)?.payload.text).toMatch(/^Linked to wallet /);
+    await b.say(43, `/start ${code}`); // the same link, a second time, from another chat
+    expect(b.sentTo(43).at(-1)?.payload.text).toMatch(/expired or was already used/);
+    expect(await ctx.store.telegramChats(owner.address)).toEqual(["42"]);
 
     const { id } = await newDraft();
-    await new Promise((r) => setTimeout(r, 0));
-    const pushed = calls.at(-1);
-    expect(pushed?.method).toBe("sendMessage");
+    await settle();
+    const pushed = b.sentTo(42).at(-1);
     expect(pushed?.payload.chat_id).toBe("42");
     expect(String(pushed?.payload.text)).toMatch(/yield-scout<\/b> wants approval/);
     const buttons = JSON.stringify(pushed?.payload.reply_markup);
@@ -398,19 +433,134 @@ describe("Telegram", () => {
     // With a public https URL (the tunnel), a phone button opens the page inside Phantom.
     ctx.config.publicUrl = "https://demo.trycloudflare.com";
     const second = await newDraft();
-    await new Promise((r) => setTimeout(r, 0));
-    const phoneButtons = JSON.stringify(calls.at(-1)?.payload.reply_markup);
+    await settle();
     const page = `https://demo.trycloudflare.com/approve/${second.id}`;
-    expect(phoneButtons).toContain(
+    expect(JSON.stringify(b.sentTo(42).at(-1)?.payload.reply_markup)).toContain(
       `https://phantom.app/ul/browse/${encodeURIComponent(page)}?ref=${encodeURIComponent("https://demo.trycloudflare.com")}`,
     );
 
-    ctx.bus.emit("activity", "dca-agent", {
+    ctx.bus.emit("activity", "yield-scout", {
       type: "blocked",
       summary: "transfer 5 USDC to AhLo…",
       reasons: ["token destination AhLo… not in allowlist"],
     });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(String(calls.at(-1)?.payload.text)).toMatch(/BLOCKED<\/b>: dca-agent/);
+    await settle();
+    expect(String(b.sentTo(42).at(-1)?.payload.text)).toMatch(/BLOCKED<\/b>: yield-scout/);
+  });
+
+  it("sends each owner's alerts only to the chats linked to that owner", async () => {
+    const b = await makeBot();
+    const bob = (await generateKeyPairSigner()).address;
+    expect(
+      (
+        await api("/api/agents", {
+          name: "bobs-agent",
+          address: (await generateKeyPairSigner()).address,
+          owner: bob,
+          cluster: "fork",
+          allowanceMint: USDC,
+          rules: {
+            maxTxUsd: 25,
+            approveAboveUsd: 10,
+            destinations: ["self"],
+            programs: ["jupiter"],
+          },
+        })
+      ).status,
+    ).toBe(200);
+    await b.link(42, owner.address);
+    await b.link(77, bob);
+
+    const { id } = await newDraft();
+    await settle();
+    expect(b.sentTo(42)).toHaveLength(2); // the link confirmation and the draft
+    expect(b.sentTo(77)).toHaveLength(1); // only its own link confirmation
+
+    ctx.bus.emit("activity", "bobs-agent", { type: "blocked", summary: "x", reasons: ["y"] });
+    ctx.bus.emit("activity", "kill-switch", {
+      type: "kill",
+      owner: bob,
+      left: 0,
+      cluster: "devnet",
+    });
+    await settle();
+    expect(b.sentTo(42)).toHaveLength(2);
+    expect(
+      b
+        .sentTo(77)
+        .map((c) => String(c.payload.text))
+        .join("\n"),
+    ).toMatch(/BLOCKED[\s\S]*Kill switch/);
+
+    // /pending lists only the chat's own items, and Reject only works for its own wallet.
+    await b.say(77, "/pending");
+    expect(String(b.sentTo(77).at(-1)?.payload.text)).toBe("Nothing pending.");
+    await b.press(77, `reject:${id}`);
+    expect(b.answers().at(-1)?.payload.text).toBe("Not allowed.");
+    expect((await ctx.store.draft(id))?.status).toBe("pending");
+    await b.say(42, "/pending");
+    expect(String(b.sentTo(42).at(-1)?.payload.text)).toMatch(/yield-scout<\/b> wants approval/);
+    await b.press(42, `reject:${id}`);
+    expect(b.answers().at(-1)?.payload.text).toBe("Rejected.");
+    expect((await ctx.store.draft(id))?.status).toBe("rejected");
+  });
+
+  it("lets one chat hold several wallets, and /unlink stops the messages", async () => {
+    const b = await makeBot();
+    await b.link(42, owner.address);
+    await b.link(42, stranger.address);
+    expect(await ctx.store.telegramOwners("42")).toEqual([owner.address, stranger.address]);
+
+    await b.say(42, "/unlink");
+    expect(String(b.sentTo(42).at(-1)?.payload.text)).toMatch(/^Unlinked/);
+    const before = b.sentTo(42).length;
+    await newDraft();
+    await settle();
+    expect(b.sentTo(42)).toHaveLength(before);
+  });
+
+  it("points strangers at the dashboard instead of linking them", async () => {
+    const b = await makeBot();
+    await b.say(9, "/start");
+    expect(String(b.sentTo(9).at(-1)?.payload.text)).toContain(
+      'http://localhost:3000/app, sign in with your wallet, and press "Connect Telegram"',
+    );
+    await b.say(9, "/pending");
+    await b.say(9, "/kill");
+    await b.say(9, "hello?");
+    expect(b.sentTo(9)).toHaveLength(4);
+    expect(b.sentTo(9).every((c) => /Connect Telegram/.test(String(c.payload.text)))).toBe(true);
+    await b.press(9, "reject:d_whatever");
+    expect(b.answers().at(-1)?.payload.text).toBe("Not allowed.");
+  });
+
+  it("takes updates by webhook only with the secret header", async () => {
+    const b = await makeBot("s3cret-value");
+    ctx.telegram = b.telegram;
+    const post = (headers: Record<string, string>) =>
+      app.request("/telegram/webhook", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify(b.update(5, "/start")),
+      });
+    expect((await post({})).status).toBe(401);
+    expect((await post({ "x-telegram-bot-api-secret-token": "wrong" })).status).toBe(401);
+    expect(b.sentTo(5)).toHaveLength(0);
+    expect((await post({ "x-telegram-bot-api-secret-token": "s3cret-value" })).status).toBe(200);
+    await settle();
+    expect(String(b.sentTo(5).at(-1)?.payload.text)).toMatch(/Connect Telegram/);
+
+    // Without a webhook configured the route does not exist.
+    ctx.telegram = (await makeBot()).telegram;
+    expect((await post({ "x-telegram-bot-api-secret-token": "s3cret-value" })).status).toBe(404);
+  });
+
+  it("moves a pre-multi-owner chat link to the server's agent owners", async () => {
+    await ctx.store.setSetting("telegram_chat_id", "42");
+    await ctx.store.setSetting("telegram_link_code", "oldcode");
+    await makeBot();
+    expect(await ctx.store.telegramOwners("42")).toEqual([owner.address]);
+    expect(await ctx.store.setting("telegram_chat_id")).toBeUndefined();
+    expect(await ctx.store.setting("telegram_link_code")).toBeUndefined();
   });
 });

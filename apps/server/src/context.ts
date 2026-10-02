@@ -5,6 +5,7 @@ import { signer } from "@solana/kit-plugin-signer";
 import { subscriptionsProgram } from "@solana/subscriptions";
 import { type BagClient, type Cluster, rpcUrlFor } from "@syndromi/core";
 import type { DraftRecord, Store, TopUpRecord } from "./db.js";
+import type { Telegram } from "./telegram.js";
 
 export type ServerEvents = {
   draft: [DraftRecord];
@@ -35,6 +36,8 @@ export type ServerContext = {
     nextRun?(name: string): Date | null;
     unload?(name: string): void;
   };
+  /** The Telegram bot, when TELEGRAM_BOT_TOKEN is set. */
+  telegram?: Telegram;
   /** What happens after each kind of owner transaction lands (see owner-tx.ts). */
   completions: Map<string, (tx: never, signature: string | undefined) => Promise<unknown>>;
   bus: Bus;

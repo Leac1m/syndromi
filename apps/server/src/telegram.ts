@@ -1,65 +1,107 @@
-// Telegram: the owner's approval inbox. Long polling (no webhook or public URL needed).
-// Linking: the server prints https://t.me/<bot>?start=<one-time code>; /start <code> binds that
-// chat, and every other chat is ignored. Approve buttons open the Blink (our viewer at
-// /approve/:id, or dial.to), so approving always means signing in the wallet; Reject needs no
-// signature. Telegram rejects "localhost" in button URLs; 127.0.0.1 works.
+// Telegram: each owner's approval inbox. A signed-in owner presses "Connect Telegram" in the
+// dashboard, which issues a one-time link (https://t.me/<bot>?start=<code>); /start <code> binds
+// that chat to the wallet. A chat may hold several wallets, and every alert goes only to the chats
+// linked to the agent's owner. Approve buttons open the Blink (our viewer at /approve/:id, or
+// dial.to), so approving always means signing in the wallet; Reject needs no signature and works
+// only for items of a wallet linked to the chat. Telegram rejects "localhost" in button URLs;
+// 127.0.0.1 works.
+// Updates arrive by long polling, or by webhook when TELEGRAM_WEBHOOK_SECRET is set (a hosted
+// server that sleeps is woken by Telegram's request).
 import { explorerTx, tokenByMint, toUiAmount } from "@syndromi/core";
-import { Bot, InlineKeyboard, type Transformer } from "grammy";
+import { Bot, InlineKeyboard, type Transformer, webhookCallback } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
+import type { Context as HonoContext } from "hono";
 import { blinkUrl } from "./actions/spec.js";
 import type { ServerContext } from "./context.js";
-import { type DraftRecord, StatusChanged, type TopUpRecord } from "./db.js";
+import { type DraftRecord, StatusChanged, TELEGRAM_CODE_TTL_MS, type TopUpRecord } from "./db.js";
 
-const CHAT = "telegram_chat_id";
-const CODE = "telegram_link_code";
+/** The pre-multi-owner single-chat settings, migrated on startup. */
+const LEGACY_CHAT = "telegram_chat_id";
+const LEGACY_CODE = "telegram_link_code";
+
+export const WEBHOOK_PATH = "/telegram/webhook";
 
 export type Telegram = {
   bot: Bot;
-  /** Deep link that binds the owner's chat, or undefined once bound. */
-  linkUrl(): Promise<string | undefined>;
+  /** A t.me link that binds the chat opening it to `owner`'s wallet (works once, for 10 minutes). */
+  linkUrlFor(owner: string): Promise<{ url: string; expiresAt: string }>;
+  /** Set when updates arrive by webhook: mount it at WEBHOOK_PATH. */
+  webhook?: (c: HonoContext) => Promise<Response>;
   start(): Promise<void>;
   stop(): Promise<void>;
 };
 
+const short = (address: string) => `${address.slice(0, 4)}…${address.slice(-4)}`;
+
 export async function createTelegram(
   ctx: ServerContext,
-  opts: { token: string; botInfo?: UserFromGetMe; transformer?: Transformer },
+  opts: {
+    token: string;
+    botInfo?: UserFromGetMe;
+    transformer?: Transformer;
+    /** Receive updates by webhook (needs an https PUBLIC_URL) instead of long polling. */
+    webhookSecret?: string;
+  },
 ): Promise<Telegram> {
   const { store, bus, config } = ctx;
   const bot = new Bot(opts.token, opts.botInfo ? { botInfo: opts.botInfo } : {});
   if (opts.transformer) bot.api.config.use(opts.transformer);
   if (!opts.botInfo) await bot.init();
 
-  if (!(await store.setting(CHAT)) && !(await store.setting(CODE))) {
-    await store.setSetting(CODE, crypto.randomUUID().replaceAll("-", "").slice(0, 16));
-  }
-  const chatId = () => store.setting(CHAT);
-  const isOwner = async (id: number | undefined) =>
-    id !== undefined && String(id) === (await chatId());
+  await migrateLegacyLink();
+
+  /** The dashboard testers are sent to, from the origins the server already trusts. */
+  const dashboardUrl = () => {
+    const origin =
+      config.dashboardOrigins.find((o) => o.startsWith("https://")) ?? config.dashboardOrigins[0];
+    return origin ? `${origin.replace(/\/+$/, "")}/app` : undefined;
+  };
+  const welcome = (note = "") => {
+    const where = dashboardUrl();
+    return (
+      `${note ? `${note}\n\n` : ""}syndromi gives AI agents on Solana a budget you control. ` +
+      `This bot sends you their approval requests and alerts.\n\n` +
+      (where
+        ? `To connect it: open ${where}, sign in with your wallet, and press "Connect Telegram".`
+        : `To connect it, sign in to the syndromi dashboard and press "Connect Telegram".`)
+    );
+  };
 
   bot.command("start", async (c) => {
-    if (await isOwner(c.chat.id)) return c.reply("Already linked. Approvals will arrive here.");
-    const code = await store.setting(CODE);
-    if (!code || c.match.trim() !== code) return c.reply("This syndromi bot is private.");
-    await store.setSetting(CHAT, String(c.chat.id));
-    await store.deleteSetting(CODE);
-    return c.reply(
-      "Linked. You'll get approval requests, top-up requests, and BLOCKED alerts here. " +
-        "Approving always means signing in your wallet.",
-    );
+    const chat = String(c.chat.id);
+    const code = c.match.trim();
+    if (code) {
+      const owner = await store.consumeTelegramCode(code);
+      if (!owner) return c.reply(welcome("That link expired or was already used."));
+      await store.linkTelegram(chat, owner);
+      return c.reply(
+        `Linked to wallet ${short(owner)}. You'll get approval requests, top-up requests, and ` +
+          `BLOCKED alerts for its agents here. Approving always means signing in your wallet.\n\n` +
+          `/pending lists what waits for you, /kill revokes every allowance, /unlink stops these messages.`,
+      );
+    }
+    const owners = await store.telegramOwners(chat);
+    if (!owners.length) return c.reply(welcome());
+    return c.reply(`Already linked (${owners.map(short).join(", ")}). Approvals will arrive here.`);
   });
 
   bot.command("pending", async (c) => {
-    if (!(await isOwner(c.chat.id))) return;
-    const drafts = await store.drafts({ status: "pending" });
-    const topups = await store.topUps({ status: "pending" });
-    if (!drafts.length && !topups.length) return c.reply("Nothing pending.");
-    for (const d of drafts) await send(await draftMessage(d), draftKeyboard(d));
-    for (const t of topups) await send(topUpMessage(t), topUpKeyboard(t));
+    const owners = await store.telegramOwners(String(c.chat.id));
+    if (!owners.length) return c.reply(welcome());
+    const [drafts, topups] = await Promise.all([
+      store.drafts({ status: "pending" }),
+      store.topUps({ status: "pending" }),
+    ]);
+    const mine = drafts.filter((d) => owners.includes(d.owner));
+    const mineTopUps = topups.filter((t) => owners.includes(t.owner));
+    if (!mine.length && !mineTopUps.length) return c.reply("Nothing pending.");
+    const chat = String(c.chat.id);
+    for (const d of mine) await sendTo(chat, await draftMessage(d), draftKeyboard(d));
+    for (const t of mineTopUps) await sendTo(chat, topUpMessage(t), topUpKeyboard(t));
   });
 
   bot.command("kill", async (c) => {
-    if (!(await isOwner(c.chat.id))) return;
+    if (!(await store.telegramOwners(String(c.chat.id))).length) return c.reply(welcome());
     const link = (cluster: string) =>
       `${config.publicUrl}/blink?action=${encodeURIComponent(`/actions/kill-switch?cluster=${cluster}`)}`;
     const keyboard = new InlineKeyboard()
@@ -76,12 +118,25 @@ export async function createTelegram(
     );
   });
 
+  bot.command("unlink", async (c) => {
+    const removed = await store.unlinkTelegramChat(String(c.chat.id));
+    return c.reply(
+      removed
+        ? "Unlinked. You won't get messages here anymore; connect again from the dashboard any time."
+        : welcome(),
+    );
+  });
+
   bot.callbackQuery(/^reject:(d_\w+|t_\w+)$/, async (c) => {
-    if (!(await isOwner(c.chat?.id))) return c.answerCallbackQuery({ text: "Not allowed." });
+    const owners = await store.telegramOwners(String(c.chat?.id ?? ""));
     const id = c.match[1] ?? "";
     const record = id.startsWith("d_") ? await store.draft(id) : await store.topUp(id);
-    if (record?.status !== "pending") {
-      return c.answerCallbackQuery({ text: `Already ${record?.status ?? "gone"}.` });
+    // Only the wallets linked to this chat may reject; anyone else is told nothing about the item.
+    if (!record || !owners.includes(record.owner)) {
+      return c.answerCallbackQuery({ text: "Not allowed." });
+    }
+    if (record.status !== "pending") {
+      return c.answerCallbackQuery({ text: `Already ${record.status}.` });
     }
     try {
       if (id.startsWith("d_")) {
@@ -97,19 +152,30 @@ export async function createTelegram(
     return c.answerCallbackQuery({ text: "Rejected." });
   });
 
-  async function send(html: string | Promise<string>, keyboard?: InlineKeyboard) {
-    const chat = await chatId().catch((e) => {
-      console.error("telegram:", (e as Error).message);
-      return undefined;
-    });
-    if (!chat) return;
+  // Anything else, from a chat that is not linked: point it at the dashboard.
+  bot.on("message", async (c) => {
+    if (!(await store.telegramOwners(String(c.chat.id))).length) return c.reply(welcome());
+    return c.reply("Commands: /pending, /kill, /unlink.");
+  });
+
+  async function sendTo(chat: string, html: string, keyboard?: InlineKeyboard) {
     await bot.api
-      .sendMessage(chat, await html, {
+      .sendMessage(chat, html, {
         parse_mode: "HTML",
         link_preview_options: { is_disabled: true },
         ...(keyboard ? { reply_markup: keyboard } : {}),
       })
       .catch((e) => console.error("telegram:", (e as Error).message));
+  }
+
+  /** Send to every chat linked to `owner`. A failure for one chat never stops the others. */
+  async function notify(owner: string, html: string | Promise<string>, keyboard?: InlineKeyboard) {
+    try {
+      const [text, chats] = await Promise.all([html, store.telegramChats(owner)]);
+      for (const chat of chats) await sendTo(chat, text, keyboard);
+    } catch (e) {
+      console.error("telegram:", (e as Error).message);
+    }
   }
 
   // Our own Blink viewer by default; BLINK_VIEWER=dialto uses dial.to (when it is up).
@@ -161,8 +227,8 @@ export async function createTelegram(
       expired: `⌛ Expired without approval: ${esc(d.summary)}`,
       rejected: `🚫 Rejected: ${esc(d.summary)}`,
     };
-    if (d.status === "pending") void send(draftMessage(d), draftKeyboard(d));
-    else if (messages[d.status]) void send(messages[d.status] as string);
+    if (d.status === "pending") void notify(d.owner, draftMessage(d), draftKeyboard(d));
+    else if (messages[d.status]) void notify(d.owner, messages[d.status] as string);
   });
 
   bus.on("topup", (t) => {
@@ -173,38 +239,82 @@ export async function createTelegram(
       expired: `⌛ Top-up request expired: ${amount(t)} for ${esc(t.agentName)}`,
       rejected: `🚫 Top-up rejected: ${amount(t)} for ${esc(t.agentName)}`,
     };
-    if (t.status === "pending") void send(topUpMessage(t), topUpKeyboard(t));
-    else if (messages[t.status]) void send(messages[t.status] as string);
+    if (t.status === "pending") void notify(t.owner, topUpMessage(t), topUpKeyboard(t));
+    else if (messages[t.status]) void notify(t.owner, messages[t.status] as string);
   });
 
   bus.on("activity", (agentName, e) => {
-    if (e.type === "kill") {
-      void send(
-        e.left
-          ? `🛑 Kill switch: some delegations revoked on ${esc(String(e.cluster))}; ${e.left} left.`
-          : `🛑 Kill switch: every delegation on ${esc(String(e.cluster))} is revoked. No agent can pull from your bag.`,
+    if (e.type !== "kill" && e.type !== "blocked") return;
+    void (async () => {
+      // The kill switch names its owner; other events belong to the agent's owner.
+      const owner =
+        typeof e.owner === "string"
+          ? e.owner
+          : (await store.agent(agentName).catch(() => undefined))?.owner;
+      if (!owner) return;
+      if (e.type === "kill") {
+        await notify(
+          owner,
+          e.left
+            ? `🛑 Kill switch: some delegations revoked on ${esc(String(e.cluster))}; ${e.left} left.`
+            : `🛑 Kill switch: every delegation on ${esc(String(e.cluster))} is revoked. No agent can pull from your bag.`,
+        );
+        return;
+      }
+      const reasons = (e.reasons as string[] | undefined) ?? [];
+      await notify(
+        owner,
+        `🛑 <b>BLOCKED</b>: ${esc(agentName)} tried to ${esc(String(e.summary ?? e.tool))}\n` +
+          reasons.map((r) => `• ${esc(r)}`).join("\n"),
       );
+    })();
+  });
+
+  /** Chats linked before wallets were tracked belong to the server's agent owners. */
+  async function migrateLegacyLink() {
+    const chat = await store.setting(LEGACY_CHAT);
+    if (!chat) {
+      await store.deleteSetting(LEGACY_CODE);
       return;
     }
-    if (e.type !== "blocked") return;
-    const reasons = (e.reasons as string[] | undefined) ?? [];
-    void send(
-      `🛑 <b>BLOCKED</b>: ${esc(agentName)} tried to ${esc(String(e.summary ?? e.tool))}\n` +
-        reasons.map((r) => `• ${esc(r)}`).join("\n"),
-    );
-  });
+    for (const owner of new Set((await store.agents()).map((a) => a.owner))) {
+      await store.linkTelegram(chat, owner);
+    }
+    await store.deleteSetting(LEGACY_CHAT);
+    await store.deleteSetting(LEGACY_CODE);
+  }
+
+  const secretToken = opts.webhookSecret;
+  const webhook = secretToken
+    ? (webhookCallback(bot, "hono", { secretToken }) as (c: HonoContext) => Promise<Response>)
+    : undefined;
 
   return {
     bot,
-    linkUrl: async () => {
-      const code = await store.setting(CODE);
-      return code ? `https://t.me/${bot.botInfo.username}?start=${code}` : undefined;
+    linkUrlFor: async (owner) => {
+      const code = crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+      await store.issueTelegramCode(code, owner);
+      return {
+        url: `https://t.me/${bot.botInfo.username}?start=${code}`,
+        expiresAt: new Date(Date.now() + TELEGRAM_CODE_TTL_MS).toISOString(),
+      };
     },
+    ...(webhook ? { webhook } : {}),
     start: async () => {
+      if (secretToken) {
+        if (!config.publicUrl.startsWith("https://")) {
+          throw new Error("Telegram webhooks need an https PUBLIC_URL");
+        }
+        await bot.api.setWebhook(`${config.publicUrl}${WEBHOOK_PATH}`, {
+          secret_token: secretToken,
+          allowed_updates: ["message", "callback_query"],
+        });
+        return;
+      }
       void bot.start({ drop_pending_updates: true, onStart: () => undefined });
     },
     stop: async () => {
-      await bot.stop();
+      if (!secretToken) await bot.stop();
     },
   };
 }

@@ -239,6 +239,37 @@ describe.each(engines)("store on $name", (engine) => {
     expect(await store.ownerTx("x_1")).toEqual({ id: "x_1", status: "issued" });
   });
 
+  it("links Telegram chats to wallets with single-use, expiring codes", async () => {
+    await store.issueTelegramCode("c-1", OWNER);
+    expect(await store.consumeTelegramCode("nope")).toBeUndefined();
+    const both = await Promise.all([
+      store.consumeTelegramCode("c-1"),
+      store.consumeTelegramCode("c-1"),
+    ]);
+    expect(both.filter(Boolean)).toEqual([OWNER]);
+
+    await store.issueTelegramCode("c-old", OWNER);
+    const later = new Date(Date.now() + 11 * 60 * 1000);
+    expect(await store.consumeTelegramCode("c-old", undefined, later)).toBeUndefined();
+
+    // One chat can hold several wallets, and linking twice changes nothing.
+    await store.linkTelegram("100", OWNER);
+    await store.linkTelegram("100", OWNER);
+    await store.linkTelegram("100", OTHER);
+    await store.linkTelegram("200", OTHER);
+    expect(await store.telegramOwners("100")).toEqual([OWNER, OTHER]);
+    expect(await store.telegramChats(OTHER)).toEqual(["100", "200"]);
+    expect(await store.telegramChats(OWNER)).toEqual(["100"]);
+
+    expect(await store.unlinkTelegram(OTHER, "200")).toBe(1);
+    expect(await store.unlinkTelegram(OTHER, "200")).toBe(0);
+    expect(await store.unlinkTelegramChat("100")).toBe(2);
+    expect(await store.telegramChats(OWNER)).toEqual([]);
+    await store.linkTelegram("300", OWNER);
+    await store.linkTelegram("301", OWNER);
+    expect(await store.unlinkTelegram(OWNER)).toBe(2);
+  });
+
   it("still has everything after a restart", async () => {
     const reopened = engine.open();
     try {

@@ -65,6 +65,8 @@ The dashboard and phone approvals:
    (`openssl rand -hex 32`) and `TELEGRAM_BOT_TOKEN` to `.env`.
 2. Run `pnpm demo:up` (tunnel + server), then `pnpm --filter @syndromi/dashboard dev`.
 3. Open http://localhost:3000/app and connect Phantom (the landing page is at `/`).
+4. For Telegram alerts, press **Connect Telegram** on the dashboard, open the link and press Start.
+   Each wallet links its own chat(s); alerts for an agent go only to its owner's chats.
 
 The full six-step demo is in [`docs/demo-runbook.md`](docs/demo-runbook.md).
 

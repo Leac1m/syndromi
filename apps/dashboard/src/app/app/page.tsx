@@ -4,6 +4,7 @@ import { ActionPanel } from "@/components/action-panel";
 import { ActivityFeed } from "@/components/activity-feed";
 import { useApp } from "@/components/providers";
 import { RunNow } from "@/components/run-now";
+import { TelegramCard } from "@/components/telegram-card";
 import { Card } from "@/components/ui";
 import { api } from "@/lib/api";
 import { usePoll } from "@/lib/use-poll";
@@ -96,14 +97,17 @@ export default function Overview() {
         </div>
       </Card>
 
-      <Card title="Kill switch">
-        <ActionPanel
-          path={`/actions/kill-switch?cluster=${app.network}`}
-          compact
-          danger
-          onDone={refresh}
-        />
-      </Card>
+      <div className="space-y-4">
+        <Card title="Kill switch">
+          <ActionPanel
+            path={`/actions/kill-switch?cluster=${app.network}`}
+            compact
+            danger
+            onDone={refresh}
+          />
+        </Card>
+        <TelegramCard />
+      </div>
 
       <div className="md:col-span-3">
         <Card title={`Pending approvals${pendingCount ? ` (${pendingCount})` : ""}`}>

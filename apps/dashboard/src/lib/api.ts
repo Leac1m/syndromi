@@ -140,4 +140,7 @@ export const api = {
     call<{ removed: string }>(`/owner/agents/${encodeURIComponent(name)}`, undefined, "DELETE"),
   createHosted: (template: string, cluster: Network, manifest: unknown) =>
     call<AgentView>("/owner/agents", { template, cluster, manifest }),
+  telegram: () => call<{ enabled: boolean; chats: number }>("/owner/telegram"),
+  telegramLink: () => call<{ url: string; expiresAt: string }>("/owner/telegram/link", {}),
+  telegramDisconnect: () => call<{ unlinked: number }>("/owner/telegram", undefined, "DELETE"),
 };

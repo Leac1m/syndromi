@@ -107,6 +107,12 @@ create table if not exists sign_requests (
   used integer not null default 0);
 create table if not exists settings (key text primary key, value text not null);
 create table if not exists owner_txs (id text primary key, data text not null);
+create table if not exists telegram_links (
+  chat_id text not null, owner text not null, linked_at text not null,
+  primary key (chat_id, owner));
+create table if not exists telegram_codes (
+  code text primary key, owner text not null, created_at text not null,
+  used integer not null default 0);
 `;
 
 type Dialect = "sqlite" | "postgres";
@@ -217,6 +223,9 @@ function strictSsl(url: string) {
 
 const json = (value: unknown) =>
   JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
+
+/** How long a Telegram link code stays valid. */
+export const TELEGRAM_CODE_TTL_MS = 10 * 60 * 1000;
 
 /** A guarded update found the record in another status (someone else changed it first). */
 export class StatusChanged extends Error {
@@ -518,6 +527,78 @@ export class Store {
   async ownerTx<T>(id: string): Promise<T | undefined> {
     const row = await this.get<{ data: string }>("select data from owner_txs where id = ?", [id]);
     return row ? (JSON.parse(row.data) as T) : undefined;
+  }
+
+  // ------------------------------------------------------------------ telegram
+  /** A one-time code that binds whichever chat presents it to `owner`'s wallet. */
+  async issueTelegramCode(code: string, owner: string) {
+    await this.run("insert into telegram_codes (code, owner, created_at) values (?, ?, ?)", [
+      code,
+      owner,
+      new Date().toISOString(),
+    ]);
+  }
+
+  /** The wallet a code was issued for. Works once; undefined if unknown, used or older than `ttlMs`. */
+  async consumeTelegramCode(
+    code: string,
+    ttlMs = TELEGRAM_CODE_TTL_MS,
+    now = new Date(),
+  ): Promise<string | undefined> {
+    const row = await this.get<{ owner: string; created_at: string }>(
+      "update telegram_codes set used = 1 where code = ? and used = 0 returning owner, created_at",
+      [code],
+    );
+    if (!row || now.getTime() - Date.parse(row.created_at) > ttlMs) return undefined;
+    return row.owner;
+  }
+
+  /** One chat may link several wallets; linking the same pair again changes nothing. */
+  async linkTelegram(chatId: string, owner: string) {
+    await this.run(
+      "insert into telegram_links (chat_id, owner, linked_at) values (?, ?, ?) on conflict do nothing",
+      [chatId, owner, new Date().toISOString()],
+    );
+  }
+
+  /** Unlink one chat from `owner` (or, without a chat, every chat). Returns how many were removed. */
+  async unlinkTelegram(owner: string, chatId?: string): Promise<number> {
+    const rows =
+      chatId === undefined
+        ? await this.all<{ chat_id: string }>(
+            "delete from telegram_links where owner = ? returning chat_id",
+            [owner],
+          )
+        : await this.all<{ chat_id: string }>(
+            "delete from telegram_links where owner = ? and chat_id = ? returning chat_id",
+            [owner, chatId],
+          );
+    return rows.length;
+  }
+
+  /** Unlink a chat from every wallet (the bot's /unlink). */
+  async unlinkTelegramChat(chatId: string): Promise<number> {
+    const rows = await this.all<{ owner: string }>(
+      "delete from telegram_links where chat_id = ? returning owner",
+      [chatId],
+    );
+    return rows.length;
+  }
+
+  async telegramChats(owner: string): Promise<string[]> {
+    const rows = await this.all<{ chat_id: string }>(
+      "select chat_id from telegram_links where owner = ? order by linked_at",
+      [owner],
+    );
+    return rows.map((r) => r.chat_id);
+  }
+
+  async telegramOwners(chatId: string): Promise<string[]> {
+    const rows = await this.all<{ owner: string }>(
+      "select owner from telegram_links where chat_id = ? order by linked_at",
+      [chatId],
+    );
+    return rows.map((r) => r.owner);
   }
 
   // ------------------------------------------------------------------ settings

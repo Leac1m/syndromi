@@ -191,6 +191,22 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
 
   owner.get("/templates", async (c) => c.json(await loadTemplates()));
 
+  // Telegram: the dashboard's "Connect Telegram". The link binds whichever chat opens it to this
+  // signed-in wallet; nothing here grants access to anything but alerts.
+  owner.get("/telegram", async (c) =>
+    c.json({
+      enabled: Boolean(ctx.telegram),
+      chats: (await store.telegramChats(c.get("owner"))).length,
+    }),
+  );
+  owner.post("/telegram/link", async (c) => {
+    if (!ctx.telegram) return c.json({ error: "Telegram is not set up on this server" }, 503);
+    return c.json(await ctx.telegram.linkUrlFor(c.get("owner")));
+  });
+  owner.delete("/telegram", async (c) =>
+    c.json({ unlinked: await store.unlinkTelegram(c.get("owner")) }),
+  );
+
   // Live wizard preview: validate an edited manifest and describe it in plain language.
   owner.post("/preview", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as { manifest?: unknown; runtime?: string };

@@ -70,6 +70,7 @@ export function mountKillSwitch(app: Hono, ctx: ServerContext, icon: string) {
     }
     ctx.bus.emit("activity", "kill-switch", {
       type: "kill",
+      owner: tx.owner,
       left: left.length,
       cluster: tx.cluster,
     });

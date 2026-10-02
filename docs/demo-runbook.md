@@ -49,7 +49,7 @@ stops answering, a run switches to Anthropic by itself, and the feed shows "swit
   `SYNDROMI_HOME`) before `init` reuses the name.
 - The kill switch already revoked every delegation onchain; the fork keeps balances until
   Surfpool restarts.
-- A fresh `SYNDROMI_HOME` means linking Telegram again (one tap).
+- A fresh database means linking Telegram again: dashboard → **Connect Telegram** → open the link → Start.
 
 ## If something goes wrong
 - **The swap fails on the fork**: the fork is stale; restart Surfpool and re-fund the owner

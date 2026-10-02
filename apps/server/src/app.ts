@@ -10,6 +10,7 @@ import { mountApprovePage } from "./approve-page.js";
 import type { ServerContext } from "./context.js";
 import { mountOwner } from "./owner.js";
 import { mountOwnerTx } from "./owner-tx.js";
+import { WEBHOOK_PATH } from "./telegram.js";
 
 export function createApp(ctx: ServerContext) {
   const app = new Hono();
@@ -23,6 +24,10 @@ export function createApp(ctx: ServerContext) {
   mountApi(app, ctx);
   mountOwner(app, ctx);
   recordApprovalEvents(ctx);
+  // Telegram delivers updates here when the bot runs by webhook (it checks the secret header).
+  app.post(WEBHOOK_PATH, async (c) =>
+    ctx.telegram?.webhook ? await ctx.telegram.webhook(c) : c.text("not found", 404),
+  );
   app.get("/", (c) => c.text("syndromi server"));
   return app;
 }

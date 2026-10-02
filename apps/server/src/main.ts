@@ -56,13 +56,16 @@ if ((env.SYNDROMI_HOSTED_SECRET ?? "").length >= 32) {
 }
 
 if (env.TELEGRAM_BOT_TOKEN) {
-  const telegram = await createTelegram(ctx, { token: env.TELEGRAM_BOT_TOKEN });
+  const webhookSecret = env.TELEGRAM_WEBHOOK_SECRET || undefined;
+  const telegram = await createTelegram(ctx, {
+    token: env.TELEGRAM_BOT_TOKEN,
+    ...(webhookSecret ? { webhookSecret } : {}),
+  });
+  ctx.telegram = telegram;
   await telegram.start();
-  const link = await telegram.linkUrl();
   console.log(
-    link
-      ? `Telegram: open ${link} and press Start to receive approvals.`
-      : `Telegram: @${telegram.bot.botInfo.username} is linked to your chat.`,
+    `Telegram: @${telegram.bot.botInfo.username} by ${webhookSecret ? "webhook" : "long polling"}; ` +
+      "owners connect it from the dashboard (Connect Telegram).",
   );
   process.once("SIGINT", () => void telegram.stop().then(() => process.exit(0)));
 } else {

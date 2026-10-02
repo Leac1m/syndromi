@@ -79,7 +79,7 @@ describe.skipIf(!surfpoolUp)("hosted pool-scout injection on the fork", () => {
       botInfo: { id: 1, is_bot: true, first_name: "s", username: "syndromi_bot" } as never,
       transformer,
     });
-    await ctx.store.setSetting("telegram_chat_id", "42");
+    await ctx.store.linkTelegram("42", owner.address); // the owner's chat gets the alert
 
     const created = await createHostedAgent(ctx, {
       manifest,

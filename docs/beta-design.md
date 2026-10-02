@@ -181,6 +181,14 @@ A free trial of the topology above, before the VPS:
   throwaway schema).
 - **Dashboard:** Vercel project `syndromi` (root `apps/dashboard`), Git-connected, production from
   `main`, at `https://syndromi.vercel.app`.
+- **Telegram for testers:** the bot is public. A signed-in owner presses **Connect Telegram**
+  (dashboard), which issues a one-time link for their wallet (10 minutes, single use); `/start <code>`
+  binds the chat. One chat can hold several wallets; each owner's alerts go only to their chats, and
+  Reject works only for items of a wallet linked to the chat. Signing in the wallet is still the only
+  way to approve. With `TELEGRAM_WEBHOOK_SECRET` set (and an https `PUBLIC_URL`) updates arrive by
+  webhook at `/telegram/webhook`, so a message wakes a sleeping server (about a minute for the first
+  reply; Telegram retries meanwhile). It does not keep the server awake: schedules, the approval
+  watcher and the sweeper still pause while it sleeps.
 - **Still limited:** the free instance sleeps after 15 minutes without requests (about a minute to
   wake), and while asleep the Telegram bot, the approval watcher and the expiry sweeper pause. A
   paid instance or the VPS removes that; the data no longer depends on it.

@@ -4,6 +4,7 @@ import { use } from "react";
 import { ActionPanel } from "@/components/action-panel";
 import { ActivityFeed } from "@/components/activity-feed";
 import { useApp } from "@/components/providers";
+import { RemoveAgent } from "@/components/remove-agent";
 import { RunNow } from "@/components/run-now";
 import { Card, RuleCard } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -21,7 +22,7 @@ export default function AgentPage({ params }: { params: Promise<{ name: string }
     return (
       <p className="text-sm text-muted">
         No agent “{name}” on {app.network}.{" "}
-        <Link href="/" className="underline">
+        <Link href="/app" className="underline">
           Back
         </Link>
       </p>
@@ -46,6 +47,11 @@ export default function AgentPage({ params }: { params: Promise<{ name: string }
         {agent?.runtime === "hosted" && agent.funded && (
           <div className="mt-4">
             <RunNow name={agent.name} nextRun={agent.nextRun ?? null} />
+          </div>
+        )}
+        {agent && !agent.funded && agent.pending === 0 && (
+          <div className="mt-4">
+            <RemoveAgent name={agent.name} />
           </div>
         )}
       </Card>

@@ -1,10 +1,12 @@
 import type { Manifest } from "@syndromi/core";
 import { AnthropicProvider } from "./anthropic.js";
+import { FailoverProvider } from "./failover.js";
 import { OpenAICompatibleProvider } from "./openai-compatible.js";
 import { call, finish, ScriptedProvider, type ScriptStep, useTools } from "./scripted.js";
 import type { Fetch, LlmProvider } from "./types.js";
 
 export * from "./anthropic.js";
+export * from "./failover.js";
 export * from "./openai-compatible.js";
 export * from "./scripted.js";
 export * from "./types.js";
@@ -25,7 +27,7 @@ export const MODEL_PRESETS = {
 } as const;
 
 /**
- * `nvidia:meta/muse-glimmer-30b`, `gemini:gemini-3.8-flash` or `anthropic:claude-sonnet-5` swap
+ * `nvidia:meta/muse-glimmer-30b`, `gemini:gemini-3.8-flash` or `anthropic:claude-opus-5-5` swap
  * the provider; a bare id (`gemini-3.7-flash`) keeps the manifest's provider.
  */
 export function modelOverride(spec: string): ModelFields {
@@ -58,10 +60,41 @@ export function injectionScript(): ScriptStep[] {
   ];
 }
 
-/** Build the provider a manifest names. Keys come from the env var named by `api_key_env`. */
+type ProviderFields = Pick<Manifest, "model" | "model_id" | "api_key_env">;
+
+/**
+ * Build the provider a manifest names. Keys come from the env var named by `api_key_env`. A backup
+ * model (manifest `fallback_model`, else `SYNDROMI_FALLBACK_MODEL`, both `<preset>:<model id>`)
+ * takes over when the primary is down; see FailoverProvider.
+ */
 export function createProvider(
-  manifest: Pick<Manifest, "model" | "model_id" | "api_key_env" | "demo">,
+  manifest: ProviderFields & Pick<Manifest, "demo" | "fallback_model">,
   env: Record<string, string | undefined> = process.env,
+  fetchImpl?: Fetch,
+): LlmProvider {
+  if (manifest.demo?.script === "injection") return new ScriptedProvider(injectionScript());
+  const primary = baseProvider(manifest, env, fetchImpl);
+  const spec = manifest.fallback_model ?? env.SYNDROMI_FALLBACK_MODEL;
+  if (!spec) return primary;
+  const fields = modelOverride(spec);
+  if (!fields.model) {
+    throw new Error(
+      `fallback model "${spec}" must name a preset: ${Object.keys(MODEL_PRESETS).join(", ")} (e.g. anthropic:claude-opus-5-5)`,
+    );
+  }
+  let backup: LlmProvider;
+  try {
+    backup = baseProvider(fields as ProviderFields, env, fetchImpl);
+  } catch (error) {
+    throw new Error(`fallback model ${spec}: ${(error as Error).message}`);
+  }
+  if (backup.name === primary.name && backup.model === primary.model) return primary;
+  return new FailoverProvider(primary, backup);
+}
+
+function baseProvider(
+  manifest: ProviderFields,
+  env: Record<string, string | undefined>,
   fetchImpl?: Fetch,
 ): LlmProvider {
   const keyFrom = (name: string | undefined) => {
@@ -70,7 +103,11 @@ export function createProvider(
     if (!value) throw new Error(`${name} is not set (manifest api_key_env). Add it to .env.`);
     return value;
   };
-  if (manifest.demo?.script === "injection") return new ScriptedProvider(injectionScript());
+  if (!manifest.model) {
+    throw new Error(
+      "this agent has no model: an external agent is driven by an MCP client (syndromi mcp)",
+    );
+  }
   if (manifest.model === "byok:anthropic") {
     const apiKey = keyFrom(manifest.api_key_env ?? "ANTHROPIC_API_KEY") as string;
     return new AnthropicProvider({

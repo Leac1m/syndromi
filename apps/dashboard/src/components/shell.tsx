@@ -9,7 +9,7 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <div className="mx-auto max-w-5xl px-4 pb-16">
       <header className="flex flex-wrap items-center gap-3 py-5">
-        <Link href="/" className="mr-auto text-xl font-bold tracking-tight">
+        <Link href="/app" className="mr-auto text-xl font-bold tracking-tight">
           syndromí
         </Link>
         <div className="flex overflow-hidden rounded-lg border border-line text-sm">

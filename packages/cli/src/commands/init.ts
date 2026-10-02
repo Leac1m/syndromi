@@ -11,6 +11,7 @@ import {
 } from "../context.js";
 import { CliError, type Io } from "../io.js";
 import { registrationOf, serverFrom } from "../session.js";
+import { claudeAddCommand } from "./mcp.js";
 
 export const TEMPLATES_DIR = new URL("../../../../templates/", import.meta.url).pathname;
 
@@ -32,9 +33,11 @@ export async function init(
   templatesDir = TEMPLATES_DIR,
 ) {
   let dir: string;
-  if (await exists(join(target, "manifest.yaml"))) {
+  // --dir only makes sense for a copy, so with it a template name wins over a same-named folder.
+  const isTemplate = await exists(join(templatesDir, target, "manifest.yaml"));
+  if (!(opts.dir && isTemplate) && (await exists(join(target, "manifest.yaml")))) {
     dir = target;
-  } else if (await exists(join(templatesDir, target, "manifest.yaml"))) {
+  } else if (isTemplate) {
     dir = opts.dir ?? target;
     if (await exists(dir)) throw new CliError(`${dir} already exists; pass --dir <new path>`);
     await cp(join(templatesDir, target), dir, { recursive: true });
@@ -75,6 +78,13 @@ export async function init(
     io.print(`server  registered; fund it from the dashboard (or: syndromi fund ${dir})`);
   } else {
     io.print(`next    syndromi fund ${dir} [--fork]`);
+  }
+  if (manifest.runtime === "external") {
+    io.print("");
+    io.print("Connect it to Claude Code (or any MCP client) once it is funded:");
+    io.print(
+      `  ${claudeAddCommand({ name: manifest.name, dir, ...(opts.server ? { server: opts.server } : {}), ...(opts.cluster ? { cluster: opts.cluster } : {}) })}`,
+    );
   }
   return { dir, name: manifest.name, address: keypair.signer.address };
 }

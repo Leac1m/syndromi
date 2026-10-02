@@ -7,6 +7,7 @@ import {
   signBytes,
 } from "@solana/kit";
 import { decryptKeypair, type EncryptedKeypair } from "@syndromi/core";
+import { fakeRpc } from "@syndromi/tools/testing";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { createContext, type ServerContext } from "./context.js";
@@ -102,6 +103,14 @@ describe("owner-scoped data", () => {
     }[];
     const scout = templates.find((t) => t.name === "yield-scout");
     expect(scout?.ruleCard[0]).toMatch(/up to 50 USDC per week/);
+    // The default template, for agents you already have, leads the wizard; it cannot be hosted.
+    expect(templates[0]?.name).toBe("mcp-agent");
+    expect(templates[0]?.manifest.runtime).toBe("external");
+    const hostedExternal = await req("/owner/agents", {
+      token,
+      body: { template: "mcp-agent", cluster: "devnet", manifest: templates[0]?.manifest },
+    });
+    expect(hostedExternal.status).toBe(400);
 
     const created = await req("/owner/agents", {
       token,
@@ -236,5 +245,50 @@ describe("hosted agents: deploy and run now", () => {
     const run = await req("/owner/agents/yield-scout/run", { token, body: {} });
     expect(await run.json()).toEqual({ started: true });
     expect(runs).toEqual(["yield-scout"]);
+  });
+
+  it("removes an unfunded agent, archiving its hosted key, and refuses when it can't be sure", async () => {
+    const { res } = await signInAs(alice);
+    const { token } = (await res.json()) as { token: string };
+    const t = await scout(token);
+    await req("/owner/agents", {
+      token,
+      body: { template: "yield-scout", cluster: "devnet", manifest: t.manifest },
+    });
+    const unloaded: string[] = [];
+    ctx.hosted = {
+      scan: () => undefined,
+      runNow: () => true,
+      unload: (name) => void unloaded.push(name),
+    };
+    const remove = (who = token) =>
+      req("/owner/agents/yield-scout", { token: who, method: "DELETE" });
+
+    ctx.rpc = () => {
+      throw new Error("RPC down");
+    };
+    expect((await remove()).status).toBe(502); // can't see its delegations: keep it
+
+    ctx.rpc = () => fakeRpc() as never; // no delegations
+    const bobSession = await signInAs(bob);
+    const bobToken = ((await bobSession.res.json()) as { token: string }).token;
+    expect((await remove(bobToken)).status).toBe(404);
+
+    const ok = await remove();
+    expect(await ok.json()).toEqual({ removed: "yield-scout" });
+    expect(unloaded).toEqual(["yield-scout"]);
+    expect(ctx.store.agent("yield-scout")).toBeUndefined();
+    expect(ctx.store.hostedKey("yield-scout")).toBeUndefined();
+    // The key is archived, not gone: its wallet may still hold the fee budget.
+    const archived = ctx.store.db
+      .prepare("select name from hosted_keys where name like 'removed/yield-scout/%'")
+      .all();
+    expect(archived).toHaveLength(1);
+    // The name is free again.
+    const again = await req("/owner/agents", {
+      token,
+      body: { template: "yield-scout", cluster: "devnet", manifest: t.manifest },
+    });
+    expect(again.status).toBe(200);
   });
 });

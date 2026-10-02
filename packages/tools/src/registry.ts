@@ -1,4 +1,4 @@
-import type { ToolName } from "@syndromi/core";
+import { errorDetail, isTransientNetworkError, type ToolName } from "@syndromi/core";
 import {
   describe,
   type Tool,
@@ -56,7 +56,7 @@ export function createToolset(
         return { type: "error", error: `invalid input for ${name}: ${issues.join("; ")}` };
       }
       try {
-        const result = await tool.run(parsed.data, ctx);
+        const result = await runWithRetry(() => tool.run(parsed.data, ctx));
         if (tool.kind === "read" && result.type !== "data") {
           return {
             type: "error",
@@ -65,8 +65,26 @@ export function createToolset(
         }
         return result;
       } catch (error) {
-        return { type: "error", error: `${name} failed: ${(error as Error).message}` };
+        return { type: "error", error: `${name} failed: ${errorDetail(error)}` };
       }
     },
   };
+}
+
+const RETRY_DELAYS_MS = [300, 900];
+
+/**
+ * Tools only read or build unsigned transactions (nothing is sent here), so a network hiccup is
+ * safe to retry. Anything that is not a network error fails at once.
+ */
+async function runWithRetry<T>(run: () => Promise<T>): Promise<T> {
+  for (const delay of RETRY_DELAYS_MS) {
+    try {
+      return await run();
+    } catch (error) {
+      if (!isTransientNetworkError(error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  return run();
 }

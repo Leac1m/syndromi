@@ -1,6 +1,6 @@
 import type { ToolDescriptor } from "@syndromi/tools";
 import { describe, expect, it, vi } from "vitest";
-import { createProvider, modelOverride } from "./index.js";
+import { createProvider, FailoverProvider, modelOverride } from "./index.js";
 
 const tools: ToolDescriptor[] = [
   { name: "balances", description: "wallet balances", inputSchema: { type: "object" } },
@@ -104,14 +104,41 @@ describe("openai-compatible provider", () => {
 });
 
 describe("anthropic provider", () => {
-  it("parses tool_use blocks and sends tool_result blocks", async () => {
+  // The SDK reads a real Response (status, headers, body), so the mock returns one.
+  const sdkReply = (...bodies: unknown[]) => {
+    let call = 0;
+    return vi.fn((_url: string | URL | Request, _init?: RequestInit) => {
+      const body = bodies[Math.min(call++, bodies.length - 1)];
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: (body as { type?: string }).type === "error" ? 400 : 200,
+          headers: { "content-type": "application/json", "request-id": "req_test" },
+        }),
+      );
+    });
+  };
+  const message = (content: unknown[], stop_reason: string, extra: object = {}) => ({
+    id: "msg_1",
+    type: "message",
+    role: "assistant",
+    model: "claude-opus-5-5",
+    content,
+    stop_reason,
+    stop_sequence: null,
+    stop_details: null,
+    usage: { input_tokens: 10, output_tokens: 5 },
+    ...extra,
+  });
+
+  it("sends the Opus 5.5 request shape, parses tool_use and echoes thinking verbatim", async () => {
     const content = [
+      { type: "thinking", thinking: "Check balances first.", signature: "sig_abc" },
       { type: "text", text: "Checking." },
       { type: "tool_use", id: "tu_1", name: "balances", input: {} },
     ];
-    const fetch = reply({ content, stop_reason: "tool_use" });
+    const fetch = sdkReply(message(content, "tool_use"), message([], "end_turn"));
     const provider = createProvider({ model: "byok:anthropic" }, { ANTHROPIC_API_KEY: "a" }, fetch);
-    expect(provider.model).toBe("claude-sonnet-5");
+    expect(provider.model).toBe("claude-opus-5-5");
     const convo = provider.start("system prompt", tools);
     const turn = await convo.send({ user: "go" });
     expect(turn).toEqual({
@@ -120,17 +147,120 @@ describe("anthropic provider", () => {
       stop: "tool_calls",
     });
     const first = sentBody(fetch);
-    expect(first.system).toBe("system prompt");
+    expect(first).toMatchObject({
+      model: "claude-opus-5-5",
+      max_tokens: 16000,
+      system: "system prompt",
+      thinking: { type: "adaptive" },
+      output_config: { effort: "medium" },
+      fallbacks: "default",
+    });
     expect(first.tools[0]).toMatchObject({ name: "balances", input_schema: { type: "object" } });
-    expect(sentHeaders(fetch)["x-api-key"]).toBe("a");
+    const headers = new Headers(sentInit(fetch).headers);
+    expect(headers.get("x-api-key")).toBe("a");
+    expect(headers.get("anthropic-beta")).toContain("server-side-fallback-2026-07-01");
 
     await convo.send({ toolResults: [{ id: "tu_1", name: "balances", content: "{}" }] });
     const second = sentBody(fetch, 1);
-    expect(second.messages[1]).toEqual({ role: "assistant", content });
+    expect(second.messages[1]).toEqual({ role: "assistant", content }); // signature intact
     expect(second.messages[2].content[0]).toMatchObject({
       type: "tool_result",
       tool_use_id: "tu_1",
     });
+  });
+
+  it("turns a refusal into a stop with a clear message", async () => {
+    const fetch = sdkReply(
+      message([], "refusal", { stop_details: { type: "refusal", category: "cyber" } }),
+    );
+    const convo = createProvider(
+      { model: "byok:anthropic" },
+      { ANTHROPIC_API_KEY: "a" },
+      fetch,
+    ).start("s", tools);
+    expect(await convo.send({ user: "go" })).toEqual({
+      text: "Anthropic claude-opus-5-5 declined this request (cyber); the run stopped.",
+      toolCalls: [],
+      stop: "refusal",
+    });
+  });
+
+  it("names the provider and model in API errors", async () => {
+    const fetch = sdkReply({
+      type: "error",
+      error: { type: "invalid_request_error", message: "bad tools" },
+    });
+    const convo = createProvider(
+      { model: "byok:anthropic", model_id: "claude-sonnet-5-5" },
+      { ANTHROPIC_API_KEY: "a" },
+      fetch,
+    ).start("s", tools);
+    await expect(convo.send({ user: "go" })).rejects.toThrow(
+      /^Anthropic claude-sonnet-5-5 HTTP 400: .*bad tools/,
+    );
+  });
+});
+
+describe("timeouts", () => {
+  const nvidia = {
+    model: "openai-compatible:https://integrate.api.nvidia.com/v1",
+    model_id: "meta/muse-glimmer-30b",
+  };
+
+  it("retries a timeout once, then names the provider and model", async () => {
+    const fetch = vi.fn(() =>
+      Promise.reject(new DOMException("The operation was aborted due to timeout", "TimeoutError")),
+    );
+    const convo = createProvider(nvidia, {}, fetch).start("s", []);
+    await expect(convo.send({ user: "go" })).rejects.toThrow(
+      "NVIDIA meta/muse-glimmer-30b did not respond within 60 s (2 tries)",
+    );
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("says which host could not be reached", async () => {
+    const fetch = vi.fn(() =>
+      Promise.reject(
+        Object.assign(new TypeError("fetch failed"), { cause: new Error("connect ECONNREFUSED") }),
+      ),
+    );
+    const convo = createProvider(nvidia, {}, fetch).start("s", []);
+    await expect(convo.send({ user: "go" })).rejects.toThrow(
+      "NVIDIA meta/muse-glimmer-30b: cannot reach integrate.api.nvidia.com (2 tries): connect ECONNREFUSED",
+    );
+  });
+});
+
+describe("fallback model", () => {
+  const nvidia = {
+    model: "openai-compatible:https://integrate.api.nvidia.com/v1",
+    model_id: "meta/muse-glimmer-30b",
+    api_key_env: "NVIDIA_API_KEY",
+  };
+  const env = { NVIDIA_API_KEY: "n", ANTHROPIC_API_KEY: "a" };
+
+  it("wraps the primary when SYNDROMI_FALLBACK_MODEL or fallback_model is set", () => {
+    const viaEnv = createProvider(nvidia, {
+      ...env,
+      SYNDROMI_FALLBACK_MODEL: "anthropic:claude-opus-5-5",
+    });
+    expect(viaEnv).toBeInstanceOf(FailoverProvider);
+    expect((viaEnv as FailoverProvider).backup.model).toBe("claude-opus-5-5");
+    const viaManifest = createProvider(
+      { ...nvidia, fallback_model: "gemini:gemini-3.8-flash" },
+      { ...env, GEMINI_API_KEY: "g", SYNDROMI_FALLBACK_MODEL: "anthropic:claude-opus-5-5" },
+    );
+    expect((viaManifest as FailoverProvider).backup.model).toBe("gemini-3.8-flash");
+    expect(createProvider(nvidia, env)).not.toBeInstanceOf(FailoverProvider);
+  });
+
+  it("explains a bad or unusable fallback", () => {
+    expect(() =>
+      createProvider(nvidia, { ...env, SYNDROMI_FALLBACK_MODEL: "claude-opus-5-5" }),
+    ).toThrow(/must name a preset/);
+    expect(() =>
+      createProvider(nvidia, { NVIDIA_API_KEY: "n", SYNDROMI_FALLBACK_MODEL: "anthropic:x" }),
+    ).toThrow(/fallback model anthropic:x: ANTHROPIC_API_KEY is not set/);
   });
 });
 
@@ -141,7 +271,7 @@ describe("modelOverride", () => {
       api_key_env: "NVIDIA_API_KEY",
       model_id: "meta/muse-glimmer-30b",
     });
-    expect(modelOverride("anthropic:claude-sonnet-5")).toMatchObject({ model: "byok:anthropic" });
+    expect(modelOverride("anthropic:claude-opus-5-5")).toMatchObject({ model: "byok:anthropic" });
     expect(modelOverride("gemini-3.7-flash")).toEqual({ model_id: "gemini-3.7-flash" });
     expect(() => modelOverride("gemini:")).toThrow(/missing model id/);
   });
@@ -151,6 +281,7 @@ describe("modelOverride", () => {
 const liveProviders = [
   { name: "NVIDIA", key: "NVIDIA_API_KEY", spec: "nvidia:meta/muse-glimmer-30b" },
   { name: "Gemini", key: "GEMINI_API_KEY", spec: "gemini:gemini-3.8-flash" },
+  { name: "Anthropic", key: "ANTHROPIC_API_KEY", spec: "anthropic:claude-opus-5-5" },
 ];
 for (const p of liveProviders) {
   const live = process.env[p.key] ? it : it.skip;

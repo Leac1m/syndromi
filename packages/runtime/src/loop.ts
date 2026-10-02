@@ -2,7 +2,7 @@
 // proposals; the policy signer decides allow | needs_approval | block; only `allow` is signed and
 // sent here. Every step is written to the activity log.
 import type { Signature, Transaction } from "@solana/kit";
-import { explorerTx, type Manifest, type PolicySigner } from "@syndromi/core";
+import { errorDetail, explorerTx, type Manifest, type PolicySigner } from "@syndromi/core";
 import type { ToolContext, ToolOutcome, Toolset } from "@syndromi/tools";
 import type { ActivityLog } from "./activity.js";
 import type { ApprovalGateway } from "./approvals.js";
@@ -28,7 +28,7 @@ export type RunOptions = {
 
 export type RunSummary = {
   steps: number;
-  reason: "done" | "max_steps" | "error";
+  reason: "done" | "max_steps" | "refused" | "error";
   sent: Signature[];
   drafts: string[];
   topUps: string[];
@@ -55,7 +55,9 @@ export async function runOnce(opts: RunOptions): Promise<RunSummary> {
   });
 
   try {
-    const convo = provider.start(systemPrompt(opts), tools.describe());
+    const convo = provider.start(systemPrompt(opts), tools.describe(), ({ type, ...fields }) =>
+      log.emit(type, fields).then(() => undefined),
+    );
     let turn: Turn = await convo.send({
       user: opts.task ?? `Run your scheduled task now. The time is ${new Date().toISOString()}.`,
     });
@@ -63,6 +65,10 @@ export async function runOnce(opts: RunOptions): Promise<RunSummary> {
       if (turn.text) {
         summary.text = turn.text;
         await log.emit("llm", { text: turn.text });
+      }
+      if (turn.stop === "refusal") {
+        summary.reason = "refused";
+        break;
       }
       if (turn.toolCalls.length === 0) break;
       if (summary.steps >= maxSteps) {
@@ -72,7 +78,11 @@ export async function runOnce(opts: RunOptions): Promise<RunSummary> {
       summary.steps++;
       const results: ToolResultMessage[] = [];
       for (const call of turn.toolCalls) {
-        results.push({ id: call.id, name: call.name, content: await handle(call, opts, summary) });
+        results.push({
+          id: call.id,
+          name: call.name,
+          content: await callTool(call, opts, summary),
+        });
       }
       turn = await convo.send({ toolResults: results });
     }
@@ -92,8 +102,26 @@ export async function runOnce(opts: RunOptions): Promise<RunSummary> {
   return summary;
 }
 
-/** Runs one tool call through the policy; returns what the model sees. */
-async function handle(call: ToolCall, opts: RunOptions, summary: RunSummary): Promise<string> {
+/** What a single tool call needs: no model, so an MCP client can drive the same path. */
+export type ToolCallOptions = Pick<
+  RunOptions,
+  "tools" | "signer" | "ctx" | "log" | "approvals" | "send"
+>;
+
+/**
+ * Runs one tool call through the policy; returns what the caller (a model, or an MCP client) sees.
+ * The one path from a tool call to a signature: tool, then policy, then approval or send.
+ */
+export async function callTool(
+  call: ToolCall,
+  opts: ToolCallOptions,
+  summary: Pick<RunSummary, "sent" | "drafts" | "topUps" | "blocked"> = {
+    sent: [],
+    drafts: [],
+    topUps: [],
+    blocked: 0,
+  },
+): Promise<string> {
   const { log, ctx } = opts;
   await log.emit("tool_call", { id: call.id, name: call.name, input: call.input });
   const outcome: ToolOutcome = await opts.tools.call(call.name, call.input, ctx);
@@ -197,8 +225,8 @@ async function handle(call: ToolCall, opts: RunOptions, summary: RunSummary): Pr
     });
     return frame(call.name, { status: "executed", signature, summary: outcome.summary });
   } catch (error) {
-    await log.emit("error", { message: `${call.name}: send failed: ${(error as Error).message}` });
-    return frame(call.name, { status: "failed", error: (error as Error).message });
+    await log.emit("error", { message: `${call.name}: send failed: ${errorDetail(error)}` });
+    return frame(call.name, { status: "failed", error: errorDetail(error) });
   }
 }
 

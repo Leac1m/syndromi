@@ -173,4 +173,57 @@ describe("executeApprovals", () => {
     expect(third.result.failed).toEqual(["d_1234abcd"]);
     expect(third.send).not.toHaveBeenCalled();
   });
+  it("retries a top-up pull after a network error before marking it failed", async () => {
+    const rpc = fakeRpc({
+      getLatestBlockhash: () => {
+        throw new Error("fetch failed");
+      },
+    });
+    const ctx = await fakeContext({
+      agent: agentSigner.address,
+      owner: owner.address as Address,
+      rpc,
+    });
+    (ctx.bag.subscriptions.instructions as Record<string, unknown>).transferFixed = async () => ({
+      programAddress: COMPUTE_BUDGET_PROGRAM_ADDRESS,
+      accounts: [],
+      data: new Uint8Array(),
+    });
+    const topup = {
+      id: "t_1",
+      owner: owner.address,
+      mint: USDC_MAINNET,
+      amount: "3000000",
+      delegation: stranger.address,
+    };
+    const client = {
+      approvals: vi.fn(async () => ({ drafts: [], topups: [topup] })),
+      reportDraft: vi.fn(async () => ({})),
+      reportTopUp: vi.fn(async (_id: string, _r: unknown) => ({})),
+    };
+    const attempts = new Map<string, number>();
+    const pass = () =>
+      executeApprovals({
+        client: client as unknown as Pick<
+          ServerClient,
+          "approvals" | "reportDraft" | "reportTopUp"
+        >,
+        agentName: "dca-agent",
+        tools: createToolset([]),
+        signer: createPolicySigner({ signer: agentSigner, policy: ctx.policy, prices: ctx.prices }),
+        ctx,
+        log: new ActivityLog("dca-agent", [memorySink()]),
+        send: vi.fn(async () => "sig" as Signature),
+        attempts,
+      });
+    const r1 = await pass();
+    expect(r1.failed).toEqual([]);
+    expect((await pass()).failed).toEqual([]);
+    expect(client.reportTopUp).not.toHaveBeenCalled();
+    expect((await pass()).failed).toEqual(["t_1"]);
+    expect(client.reportTopUp).toHaveBeenCalledWith("t_1", {
+      status: "failed",
+      error: "fetch failed",
+    });
+  });
 });

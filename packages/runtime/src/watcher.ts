@@ -3,7 +3,14 @@
 // quote, re-check the policy, and send only if the value stays within 10% of what was signed.
 // For each approved top-up: pull it into the agent's wallet through the policy signer.
 import type { Signature, Transaction } from "@solana/kit";
-import { explorerTx, type PolicySigner, pullTopUp, verifyOwnerApproval } from "@syndromi/core";
+import {
+  errorDetail,
+  explorerTx,
+  isTransientNetworkError,
+  type PolicySigner,
+  pullTopUp,
+  verifyOwnerApproval,
+} from "@syndromi/core";
 import { buildMessage, type ToolContext, type Toolset } from "@syndromi/tools";
 import type { ActivityLog } from "./activity.js";
 import type { ServerClient } from "./server-client.js";
@@ -28,7 +35,7 @@ export async function executeApprovals(opts: {
   log: ActivityLog;
   send: (signed: Transaction) => Promise<Signature>;
   now?: Date;
-  /** Simulation failures per draft, kept by the caller across passes. */
+  /** Simulation failures per draft and network failures per top-up, kept by the caller across passes. */
   attempts?: Map<string, number>;
 }): Promise<WatchResult> {
   const { client, ctx, log } = opts;
@@ -128,7 +135,7 @@ export async function executeApprovals(opts: {
       });
       await client.reportDraft(draft.id, { status: "executed", signature });
     } catch (error) {
-      await fail(`send failed: ${(error as Error).message}`);
+      await fail(`send failed: ${errorDetail(error)}`);
     }
   }
 
@@ -161,10 +168,20 @@ export async function executeApprovals(opts: {
       });
       await client.reportTopUp(topup.id, { status: "pulled", signature });
     } catch (error) {
+      const message = errorDetail(error);
+      const tries = (opts.attempts?.get(topup.id) ?? 0) + 1;
+      opts.attempts?.set(topup.id, tries);
+      if (opts.attempts && tries < SIMULATION_ATTEMPTS && isTransientNetworkError(error)) {
+        await log.emit("error", {
+          topupId: topup.id,
+          message: `top-up ${topup.id}: ${message} (try ${tries}/${SIMULATION_ATTEMPTS}), retrying`,
+        });
+        continue;
+      }
       result.failed.push(topup.id);
       await log.emit("error", {
         topupId: topup.id,
-        message: `top-up ${topup.id}: ${(error as Error).message}`,
+        message: `top-up ${topup.id}: ${message}`,
       });
       await client.reportTopUp(topup.id, { status: "failed", error: (error as Error).message });
     }

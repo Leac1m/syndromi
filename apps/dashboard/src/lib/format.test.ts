@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityEvent } from "./api";
-import { feedLine } from "./format";
+import { feedLine, runStatus } from "./format";
 
 const event = (type: string, fields: Record<string, unknown> = {}): ActivityEvent => ({
   seq: 1,
@@ -47,8 +47,70 @@ describe("feedLine", () => {
     ).toMatch(/^kill switch revoked/);
   });
 
+  it("shows tool calls as progress, failovers as warnings, and how a run ended", () => {
+    expect(feedLine(event("tool_call", { name: "balances" }))?.text).toBe("checking balances…");
+    expect(feedLine(event("tool_call", { name: "new-tool" }))?.text).toBe("using new-tool…");
+    expect(
+      feedLine(
+        event("llm_failover", {
+          from: "openai-compatible:meta/muse-glimmer-30b",
+          to: "anthropic:claude-opus-5-5",
+          reason: "NVIDIA meta/muse-glimmer-30b did not respond within 60 s (2 tries)",
+        }),
+      ),
+    ).toMatchObject({
+      tone: "warn",
+      text: "model openai-compatible:meta/muse-glimmer-30b failed; switched to anthropic:claude-opus-5-5 (NVIDIA meta/muse-glimmer-30b did not respond within 60 s (2 tries))",
+    });
+    expect(feedLine(event("run_end", { reason: "done" }))).toMatchObject({
+      text: "run finished",
+      tone: "neutral",
+    });
+    expect(feedLine(event("run_end", { reason: "max_steps" }))).toMatchObject({
+      text: "run stopped: step limit reached",
+      tone: "bad",
+    });
+    expect(feedLine(event("run_end", { reason: "done", text: "Bought SOL." }))?.text).toBe(
+      "summary: Bought SOL.",
+    );
+  });
+
   it("leaves out noisy internals", () => {
     expect(feedLine(event("llm", { text: "thinking" }))).toBeUndefined();
     expect(feedLine(event("tool_result", { ok: true }))).toBeUndefined();
+  });
+});
+
+describe("runStatus", () => {
+  const e = (type: string, run: string, fields: Record<string, unknown> = {}) =>
+    event(type, { run, ...fields });
+
+  it("follows the first run after the click to its end", () => {
+    expect(runStatus([])).toEqual({ state: "waiting" });
+    const started = [e("run_start", "r1"), e("tool_call", "r1", { name: "balances" })];
+    expect(runStatus(started)).toEqual({ state: "running", run: "r1" });
+    expect(
+      runStatus([...started, e("run_end", "r1", { reason: "done", text: "All good." })]),
+    ).toEqual({ state: "finished", run: "r1", text: "All good." });
+  });
+
+  it("fails with the run's last error, ignoring other runs", () => {
+    expect(
+      runStatus([
+        e("run_start", "r1"),
+        e("error", "r0", { message: "someone else's" }),
+        e("error", "r1", { message: "NVIDIA meta/muse-glimmer-30b did not respond" }),
+        e("run_end", "r1", { reason: "error" }),
+      ]),
+    ).toEqual({
+      state: "failed",
+      run: "r1",
+      reason: "NVIDIA meta/muse-glimmer-30b did not respond",
+    });
+    expect(runStatus([e("run_start", "r2"), e("run_end", "r2", { reason: "max_steps" })])).toEqual({
+      state: "failed",
+      run: "r2",
+      reason: "step limit reached",
+    });
   });
 });

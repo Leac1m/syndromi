@@ -15,6 +15,7 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { ActivityLog, memorySink } from "./activity.js";
 import { LocalApprovalGateway } from "./approvals.js";
+import { FailoverProvider } from "./llm/failover.js";
 import { call, finish, ScriptedProvider, useTools } from "./llm/scripted.js";
 import { PROMPT_GUARD, runOnce, systemPrompt } from "./loop.js";
 
@@ -170,6 +171,70 @@ describe("runOnce", () => {
     const summary = await runOnce({ ...opts, provider: failing });
     expect(summary.reason).toBe("error");
     expect(sink.events.at(-2)).toMatchObject({ type: "error", message: "HTTP 503: high demand" });
+  });
+
+  it("asks the owner for a top-up when the allowance is used up", async () => {
+    const usedUp = defineTool({
+      name: "pull-allowance",
+      kind: "write",
+      description: "pull",
+      input: z.object({ amount: z.number() }),
+      run: async () => {
+        throw new Error(
+          "Your USDC allowance for this period is used up. If you need more before then, ask the owner once with request-topup.",
+        );
+      },
+    });
+    const { opts, sink, send } = await setup(
+      [
+        useTools(call("pull-allowance", { amount: 3 })),
+        (results) =>
+          results[0]?.content.includes("used up")
+            ? useTools(call("request-topup", { amount: 3, reason: "Weekly allowance used up" }))
+            : finish("unexpected"),
+        finish("Asked the owner for 3 USDC; waiting."),
+      ],
+      { ...TOOLS, "pull-allowance": usedUp },
+    );
+    const summary = await runOnce(opts);
+    expect(summary.topUps).toHaveLength(1);
+    expect(send).not.toHaveBeenCalled();
+    expect(sink.events.find((e) => e.type === "topup_requested")).toMatchObject({
+      amount: 3_000_000n,
+      reason: "Weekly allowance used up",
+    });
+  });
+
+  it("switches to the backup model when the primary is down, and logs it", async () => {
+    const { opts, sink } = await setup([]);
+    const down = {
+      name: "openai-compatible",
+      model: "meta/muse-glimmer-30b",
+      start: () => ({ send: () => Promise.reject(new Error("NVIDIA did not respond")) }),
+    };
+    const backup = new ScriptedProvider([finish("Nothing to do.")]);
+    const summary = await runOnce({ ...opts, provider: new FailoverProvider(down, backup) });
+    expect(summary).toMatchObject({ reason: "done", text: "Nothing to do." });
+    expect(types(sink.events)).toEqual(["run_start", "llm_failover", "llm", "run_end"]);
+    expect(sink.events[1]).toMatchObject({
+      from: "openai-compatible:meta/muse-glimmer-30b",
+      reason: "NVIDIA did not respond",
+    });
+  });
+
+  it("ends the run on a refusal", async () => {
+    const { opts } = await setup([]);
+    const refusing = {
+      name: "anthropic",
+      model: "claude-opus-5-5",
+      start: () => ({
+        send: async () => ({ text: "declined", toolCalls: [], stop: "refusal" as const }),
+      }),
+    };
+    expect(await runOnce({ ...opts, provider: refusing })).toMatchObject({
+      reason: "refused",
+      text: "declined",
+    });
   });
 
   it("keeps the prompt guard unless a demo manifest turns it off", async () => {

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createToolset } from "./registry.js";
 import { fakeContext, fakeRpc, policy, SOL_MINT, USDC_MAINNET } from "./test-helpers.js";
 import { defineTool } from "./tool.js";
+import { shortfallMessage } from "./tools/pull-allowance.js";
 
 const ix = (programId: string, data = "") => ({ programId, accounts: [], data });
 const buildResponse = {
@@ -72,6 +73,50 @@ suite("toolset", () => {
       type: "error",
       error: expect.stringMatching(/unknown token "DOGE"/),
     });
+  });
+});
+
+suite("network hiccups", () => {
+  const flaky = (failures: number, error: Error) => {
+    let calls = 0;
+    const tool = defineTool({
+      name: "balances",
+      kind: "read",
+      description: "flaky",
+      input: z.object({}),
+      run: async () => {
+        calls++;
+        if (calls <= failures) throw error;
+        return { type: "data", data: { ok: true } };
+      },
+    });
+    return { toolset: createToolset(["balances"], { balances: tool }), calls: () => calls };
+  };
+  const networkError = Object.assign(new TypeError("fetch failed"), {
+    cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+  });
+
+  it("retries a tool that hits a network error, then succeeds", async () => {
+    const { toolset, calls } = flaky(2, networkError);
+    const out = await toolset.call("balances", {}, await fakeContext());
+    expect(out).toMatchObject({ type: "data" });
+    expect(calls()).toBe(3);
+  });
+
+  it("gives up after three attempts and names the real cause", async () => {
+    const { toolset, calls } = flaky(99, networkError);
+    const out = await toolset.call("balances", {}, await fakeContext());
+    expect(out).toEqual({
+      type: "error",
+      error: "balances failed: fetch failed (ECONNRESET: read ECONNRESET)",
+    });
+    expect(calls()).toBe(3);
+  });
+
+  it("does not retry a refusal", async () => {
+    const { toolset, calls } = flaky(99, new Error("unknown token"));
+    await toolset.call("balances", {}, await fakeContext());
+    expect(calls()).toBe(1);
   });
 });
 
@@ -218,5 +263,40 @@ suite("yield-data", () => {
     expect(JSON.stringify(out)).toMatch(
       /migration vault AhLo5HEVqYUwdoNrEWoEXtY4X9y9jd85LCbtVw1JQVig/,
     );
+  });
+});
+
+suite("pull-allowance", () => {
+  const view = (agent: string, remaining: bigint) => ({
+    address: agent as never,
+    kind: "allowance" as const,
+    agent: agent as never,
+    mint: USDC_MAINNET,
+    limit: 5_000_000n,
+    remaining,
+    periodEndsAt: 1_790_000_000n,
+    expiresAt: 0n,
+  });
+
+  it("says how much is left, and when it resets, instead of failing onchain", async () => {
+    const ctx = await fakeContext();
+    const at = { agent: ctx.agent, allowanceMint: USDC_MAINNET };
+    expect(shortfallMessage([view(ctx.agent, 2_000_000n)], at, 2_000_000n, 6, "USDC")).toBe(
+      undefined,
+    );
+    expect(shortfallMessage([view(ctx.agent, 2_000_000n)], at, 3_000_000n, 6, "USDC")).toBe(
+      "Only 2 USDC left of your allowance this period. It resets 2026-09-21T14:13Z. " +
+        "Pull at most 2 USDC. If you need more before then, ask the owner once with request-topup.",
+    );
+    expect(shortfallMessage([view(ctx.agent, 0n)], at, 1_000_000n, 6, "USDC")).toMatch(
+      /^Your USDC allowance for this period is used up\. .*request-topup/,
+    );
+  });
+
+  it("stops an agent that has no allowance, before building anything", async () => {
+    const ctx = await fakeContext(); // fakeRpc has no delegations
+    expect(
+      await createToolset(["pull-allowance"]).call("pull-allowance", { amount: 1 }, ctx),
+    ).toMatchObject({ type: "error", error: expect.stringMatching(/No allowance is set up/) });
   });
 });

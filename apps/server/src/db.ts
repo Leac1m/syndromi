@@ -14,7 +14,7 @@ export type AgentRecord = {
   allowanceMint: Address;
   rules: { maxTxUsd: number; approveAboveUsd: number; destinations: string[]; programs: string[] };
   registeredAt: string;
-  runtime?: "local" | "hosted";
+  runtime?: "local" | "hosted" | "external";
   /** As in the manifest: token symbol (or mint), amount per period, period. */
   allowance?: { mint: string; amount: number; period: "daily" | "weekly" | "monthly" };
   feeBudgetSol?: number;
@@ -152,6 +152,17 @@ export class Store {
       .prepare("select data from agent_records where (?1 is null or owner = ?1) order by name")
       .all(owner ?? null) as { data: string }[];
     return rows.map((r) => JSON.parse(r.data) as AgentRecord);
+  }
+
+  /**
+   * Remove an agent's record. A hosted key is archived under `removed/<name>/<time>`, never
+   * deleted: its wallet may still hold SOL or tokens.
+   */
+  removeAgent(name: string) {
+    this.db
+      .prepare("update hosted_keys set name = ? where name = ?")
+      .run(`removed/${name}/${new Date().toISOString()}`, name);
+    this.db.prepare("delete from agent_records where name = ?").run(name);
   }
 
   saveHostedKey(name: string, encrypted: unknown) {

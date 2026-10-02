@@ -14,6 +14,11 @@ export async function deploy(
 ) {
   const { client } = requireServer(opts.server, env);
   const { manifest, prompt } = await loadAgentDir(dir);
+  if (manifest.runtime === "external") {
+    throw new CliError(
+      `${manifest.name} is an external agent: an MCP client is its brain, so it cannot be hosted. Use: syndromi mcp ${dir}`,
+    );
+  }
   let owner: Address;
   if (opts.owner) {
     if (!isAddress(opts.owner)) throw new CliError(`--owner ${opts.owner} is not a Solana address`);

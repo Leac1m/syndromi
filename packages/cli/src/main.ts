@@ -7,6 +7,7 @@ import { approve } from "./commands/approve.js";
 import { deploy } from "./commands/deploy.js";
 import { fund } from "./commands/fund.js";
 import { init } from "./commands/init.js";
+import { mcp } from "./commands/mcp.js";
 import { requestTopUp } from "./commands/request-topup.js";
 import { revoke } from "./commands/revoke.js";
 import { run } from "./commands/run.js";
@@ -15,15 +16,20 @@ import { watch } from "./commands/watch.js";
 import { clusterFrom, type Env } from "./context.js";
 import { CliError, type Io, terminalIo } from "./io.js";
 
+export const DEFAULT_TEMPLATE = "mcp-agent";
+
 const HELP = `syndromi <command>
 
-  init <template|dir> [--dir <path>] [--server <url> --owner <address>]
-                                          copy a template and create the agent's encrypted key;
+  init [template|dir] [--dir <path>] [--server <url> --owner <address>]
+                                          copy a template (default: mcp-agent, a wallet for Claude
+                                          or any MCP client) and create the agent's encrypted key;
                                           with a server, register it for funding in the dashboard
   fund <dir>                              owner: send the fee budget and grant the allowance
   run <dir> [--once] [--server <url>] [--max-steps n] [--model [nvidia|gemini|anthropic:]id]
                                           run now (--once) or on the schedule; with a server,
                                           drafts go to Telegram and approvals are executed
+  mcp <dir> [--server <url>]              serve the agent's tools over MCP (stdio) so any MCP client
+                                          (Claude, Cursor) can act as the agent, under the same policy
   watch <dir> [--once] [--server <url>]   execute owner approvals only (no LLM)
   deploy <dir> [--owner <address>] [--server <url>]
                                           run the agent hosted: the server creates its key and
@@ -37,7 +43,7 @@ const HELP = `syndromi <command>
 
 Cluster: devnet by default; --fork for a local Surfpool mainnet fork; --mainnet (asks to confirm).
 Env: SYNDROMI_PASSPHRASE, OWNER_KEYPAIR, SYNDROMI_HOME, RPC_API_KEY, SYNDROMI_SERVER_URL,
-SYNDROMI_SERVER_TOKEN, plus the manifest's api_key_env.`;
+SYNDROMI_SERVER_TOKEN, SYNDROMI_CONFIRM_MAINNET (mcp --mainnet), plus the manifest's api_key_env.`;
 
 export async function main(argv: string[], io: Io = terminalIo, env: Env = process.env) {
   const { values, positionals } = parseArgs({
@@ -61,7 +67,9 @@ export async function main(argv: string[], io: Io = terminalIo, env: Env = proce
       help: { type: "boolean", short: "h" },
     },
   });
-  const [command, target] = positionals;
+  const [command, positional] = positionals;
+  // `syndromi init` with no argument creates the default template, for an agent you already have.
+  const target = positional ?? (command === "init" ? DEFAULT_TEMPLATE : undefined);
   const cluster = clusterFrom(values);
   const needTarget = () => {
     if (!target) throw new CliError(`usage: syndromi ${command} <dir>`);
@@ -97,6 +105,13 @@ export async function main(argv: string[], io: Io = terminalIo, env: Env = proce
         env,
       );
     }
+    case "mcp":
+      return mcp(
+        needTarget(),
+        { cluster, ...(values.server ? { server: values.server } : {}) },
+        io,
+        env,
+      );
     case "watch":
       return watch(
         needTarget(),

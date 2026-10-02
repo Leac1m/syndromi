@@ -7,6 +7,7 @@ import { toJson } from "./json.js";
 export type ActivityType =
   | "run_start"
   | "llm"
+  | "llm_failover"
   | "tool_call"
   | "tool_result"
   | "decision"
@@ -101,6 +102,8 @@ function describe(e: ActivityEvent): string | undefined {
       return `  ${RED}✗ BLOCKED: ${(e.reasons as string[]).join("; ")}${RESET}`;
     case "topup_requested":
       return `  ${YELLOW}⏸ top-up request ${e.requestId}: ${e.summary}${RESET}`;
+    case "llm_failover":
+      return `${YELLOW}↪ ${e.from} failed; switched to ${e.to}: ${oneLine(String(e.reason), 200)}${RESET}`;
     case "error":
       return `${RED}! ${e.message}${RESET}`;
     case "run_end":

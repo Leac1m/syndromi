@@ -509,7 +509,9 @@ describe("Telegram", () => {
     const b = await makeBot();
     await b.link(42, owner.address);
     await b.link(42, stranger.address);
-    expect(await ctx.store.telegramOwners("42")).toEqual([owner.address, stranger.address]);
+    expect((await ctx.store.telegramOwners("42")).sort()).toEqual(
+      [owner.address, stranger.address].sort(),
+    );
 
     await b.say(42, "/unlink");
     expect(String(b.sentTo(42).at(-1)?.payload.text)).toMatch(/^Unlinked/);

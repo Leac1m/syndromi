@@ -721,7 +721,7 @@ export class Store {
 
   async telegramChats(owner: string): Promise<string[]> {
     const rows = await this.all<{ chat_id: string }>(
-      "select chat_id from telegram_links where owner = ? order by linked_at",
+      "select chat_id from telegram_links where owner = ? order by linked_at, chat_id",
       [owner],
     );
     return rows.map((r) => r.chat_id);
@@ -729,7 +729,7 @@ export class Store {
 
   async telegramOwners(chatId: string): Promise<string[]> {
     const rows = await this.all<{ owner: string }>(
-      "select owner from telegram_links where chat_id = ? order by linked_at",
+      "select owner from telegram_links where chat_id = ? order by linked_at, owner",
       [chatId],
     );
     return rows.map((r) => r.owner);

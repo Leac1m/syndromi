@@ -4,7 +4,9 @@ import { solanaRpc } from "@solana/kit-plugin-rpc";
 import { signer } from "@solana/kit-plugin-signer";
 import { subscriptionsProgram } from "@solana/subscriptions";
 import { type BagClient, type Cluster, rpcUrlFor } from "@syndromi/core";
+import type { AgentLimits } from "./agent-api.js";
 import type { DraftRecord, Store, TopUpRecord } from "./db.js";
+import type { RemoteAgent, Via } from "./hosted.js";
 import type { Telegram } from "./telegram.js";
 
 export type ServerEvents = {
@@ -25,6 +27,8 @@ export type ServerConfig = {
   topUpTtlMs: number;
   /** Origins allowed to call /owner (the dashboard). */
   dashboardOrigins: string[];
+  /** Agent API limits (defaults in agent-api.ts); tests lower them. */
+  agentLimits?: Partial<AgentLimits>;
 };
 
 export type ServerContext = {
@@ -35,6 +39,8 @@ export type ServerContext = {
     runNow(name: string): boolean;
     nextRun?(name: string): Date | null;
     unload?(name: string): void;
+    /** The tool context for a server-held external agent (see HostedRuntime.remote). */
+    remote?(name: string, via: Via): Promise<RemoteAgent | undefined>;
   };
   /** The Telegram bot, when TELEGRAM_BOT_TOKEN is set. */
   telegram?: Telegram;

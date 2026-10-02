@@ -17,12 +17,13 @@ import {
   ruleCard,
   toUiAmount,
 } from "@syndromi/core";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { serialize } from "./api.js";
 import type { ServerContext } from "./context.js";
-import type { AgentRecord } from "./db.js";
+import { type AgentRecord, TokenLimit } from "./db.js";
 import { challenge, signIn } from "./sessions.js";
+import { createAgentToken } from "./tokens.js";
 
 export const TEMPLATES_DIR = new URL("../../../templates/", import.meta.url).pathname;
 const CLUSTERS: Cluster[] = ["devnet", "mainnet", "fork"];
@@ -229,14 +230,23 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
       template?: string;
       cluster?: string;
       manifest?: unknown;
+      custody?: string;
     };
     const template = (await loadTemplates()).find((t) => t.name === body.template);
     if (!template) return c.json({ error: `unknown template ${body.template}` }, 400);
+    const serverHeld = body.custody === "server";
+    if (serverHeld && template.manifest.runtime !== "external") {
+      return c.json(
+        { error: `${template.name} runs its own model; only external agents can be server-held` },
+        400,
+      );
+    }
     const result = await createHostedAgent(ctx, {
       manifest: body.manifest,
       prompt: template.prompt,
       owner: who,
       cluster: clusterParam(body.cluster),
+      ...(serverHeld ? { custody: "server" as const } : {}),
     });
     if (!result.ok) return c.json({ error: result.error }, result.status);
     return c.json(serialize(publicAgent(result.agent)));
@@ -293,6 +303,68 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
     return c.json({ removed: agent.name });
   });
 
+  // Access tokens for the owner's AI (remote MCP and the HTTP API) on a server-held agent. The
+  // secret is returned once, at creation; lists carry only the prefix.
+  const tokenAgent = async (c: Context<Env>) => {
+    const agent = await store.agent(c.req.param("name") ?? "");
+    if (!agent || agent.owner !== c.get("owner")) {
+      return { error: c.json({ error: "no such agent" }, 404) };
+    }
+    if (agent.custody !== "server") {
+      return {
+        error: c.json(
+          { error: `${agent.name} holds its own key; tokens are for server-held agents` },
+          409,
+        ),
+      };
+    }
+    return { agent };
+  };
+  const tokenEvent = (agent: AgentRecord, status: string, prefix: string) =>
+    store.addActivity(agent.name, {
+      type: "approval",
+      at: new Date().toISOString(),
+      kind: "token",
+      status,
+      summary: `access token ${prefix}… ${status}`,
+      cluster: agent.cluster,
+    });
+
+  owner.get("/agents/:name/tokens", async (c) => {
+    const { agent, error } = await tokenAgent(c);
+    if (!agent) return error;
+    return c.json({ tokens: await store.tokens(agent.name) });
+  });
+
+  owner.post("/agents/:name/tokens", async (c) => {
+    const { agent, error } = await tokenAgent(c);
+    if (!agent) return error;
+    const body = (await c.req.json().catch(() => ({}))) as { label?: unknown; days?: unknown };
+    try {
+      const created = await createAgentToken(ctx, agent, {
+        ...(typeof body.label === "string" ? { label: body.label } : {}),
+        ...(typeof body.days === "number" ? { days: body.days } : {}),
+      });
+      await tokenEvent(agent, "created", created.record.prefix);
+      return c.json({ token: created.token, ...created.record }, 201);
+    } catch (e) {
+      if (e instanceof TokenLimit) return c.json({ error: e.message }, 409);
+      return c.json({ error: (e as Error).message }, 400);
+    }
+  });
+
+  owner.delete("/agents/:name/tokens/:id", async (c) => {
+    const { agent, error } = await tokenAgent(c);
+    if (!agent) return error;
+    const id = c.req.param("id") ?? "";
+    const token = (await store.tokens(agent.name)).find((t) => t.id === id);
+    if (!token || !(await store.revokeToken(agent.name, id))) {
+      return c.json({ error: "no such live token" }, 404);
+    }
+    await tokenEvent(agent, "revoked", token.prefix);
+    return c.json({ revoked: id });
+  });
+
   app.route("/owner", owner);
 }
 
@@ -302,7 +374,14 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
  */
 export async function createHostedAgent(
   ctx: ServerContext,
-  args: { manifest: unknown; prompt: string; owner: Address; cluster: Cluster },
+  args: {
+    manifest: unknown;
+    prompt: string;
+    owner: Address;
+    cluster: Cluster;
+    /** `server`: an external agent whose key lives here, reached by the owner's AI with a token. */
+    custody?: "server";
+  },
 ): Promise<
   | { ok: true; agent: AgentRecord }
   | { ok: false; status: 400 | 409 | 500; error: string | string[] }
@@ -315,7 +394,17 @@ export async function createHostedAgent(
       error: "hosted agents need SYNDROMI_HOSTED_SECRET (32+ characters) on the server",
     };
   }
-  const parsed = manifestSchema.safeParse({ ...(args.manifest as object), runtime: "hosted" });
+  if (args.custody === "server" && args.cluster !== "devnet") {
+    return {
+      ok: false,
+      status: 400,
+      error: "server-held agents are devnet only; use your own key (syndromi mcp) elsewhere",
+    };
+  }
+  const parsed = manifestSchema.safeParse({
+    ...(args.manifest as object),
+    runtime: args.custody === "server" ? "external" : "hosted",
+  });
   if (!parsed.success) {
     return {
       ok: false,
@@ -326,6 +415,13 @@ export async function createHostedAgent(
   const manifest = parsed.data;
   if (await ctx.store.agent(manifest.name)) {
     return { ok: false, status: 409, error: `an agent named ${manifest.name} exists` };
+  }
+  if ((await ctx.store.agents(args.owner)).length >= MAX_AGENTS_PER_OWNER) {
+    return {
+      ok: false,
+      status: 409,
+      error: `you can have at most ${MAX_AGENTS_PER_OWNER} agents; remove one first`,
+    };
   }
   let mint: Address;
   try {
@@ -340,11 +436,15 @@ export async function createHostedAgent(
     registeredAt: new Date().toISOString(),
     manifest: manifest as unknown as Record<string, unknown>,
     prompt: args.prompt,
+    ...(args.custody ? { custody: args.custody } : {}),
   };
   await ctx.store.upsertAgent(agent);
   ctx.hosted?.scan();
   return { ok: true, agent };
 }
+
+/** Agents (hosted and server-held) one owner may create through the dashboard or `deploy`. */
+export const MAX_AGENTS_PER_OWNER = 5;
 
 function clusterParam(value: string | undefined): Cluster {
   return CLUSTERS.includes(value as Cluster) ? (value as Cluster) : "devnet";
@@ -405,6 +505,7 @@ export function publicAgent(a: AgentRecord) {
     address: a.address,
     cluster: a.cluster,
     runtime: a.runtime ?? "local",
+    ...(a.custody ? { custody: a.custody } : {}),
     allowance: a.allowance,
     feeBudgetSol: a.feeBudgetSol,
     rules: a.rules,

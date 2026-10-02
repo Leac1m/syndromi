@@ -56,14 +56,16 @@ export function mountKillSwitch(app: Hono, ctx: ServerContext, icon: string) {
 
   onOwnerTxLanded(ctx, "kill", async (tx) => {
     const left = await listDelegations(ctx.rpc(tx.cluster), tx.owner).catch(() => []);
-    const agents = await ctx.store.agents(tx.owner);
-    for (const agent of agents.filter((a) => a.cluster === tx.cluster)) {
+    const agents = (await ctx.store.agents(tx.owner)).filter((a) => a.cluster === tx.cluster);
+    // One signature also cuts the remote access: every access token of these agents stops working.
+    const tokens = await ctx.store.revokeTokensOf(agents.map((a) => a.name));
+    for (const agent of agents) {
       await ctx.store.addActivity(agent.name, {
         type: "approval",
         at: new Date().toISOString(),
         kind: "kill",
         status: "revoked",
-        summary: "kill switch: delegations revoked by the owner",
+        summary: `kill switch: delegations revoked by the owner${tokens ? `; ${tokens} access token(s) revoked` : ""}`,
         cluster: tx.cluster,
         ...(tx.signature ? { signature: tx.signature } : {}),
       });

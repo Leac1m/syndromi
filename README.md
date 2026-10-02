@@ -115,6 +115,7 @@ syndromi never supplies a model key. The brain is yours, in one of these ways:
 
 | How | Your key lives | Needs |
 |---|---|---|
+| **Remote MCP or HTTP, no install** (beta, devnet): create an agent in the dashboard with "syndromi holds the key", then **Connect an AI** | in your MCP client or code | nothing to clone: a per-agent token and a URL |
 | **MCP client** (Claude, Cursor): `syndromi mcp <dir>`, see above | in your MCP client | the repo cloned (no package is published yet) |
 | **Local runner**: `syndromi run <dir>`, a `local` agent with your own model | in your shell environment, never sent to a server | the repo cloned |
 
@@ -133,7 +134,22 @@ Or switch for one run: `pnpm syndromi run <dir> --model gemini:<id>` (`GEMINI_AP
 API works as `openai-compatible:<base url>`. With `--server`, drafts still go to Telegram and the
 dashboard and the rules are the same.
 
-Coming next: remote MCP and a plain HTTP tool API, so testers need no clone at all.
+### No install: remote MCP and the HTTP API
+
+In the dashboard, create an `mcp-agent`, choose **No install: syndromi holds the key (devnet)**, fund it,
+and open the agent. **Connect an AI** creates a token (1, 7, 30 or 90 days; shown once; at most three
+live per agent) and shows the exact command for each client:
+
+```bash
+claude mcp add --transport http syndromi-mcp-agent https://<server>/agent/mcp \
+  --header "Authorization: Bearer syn_…"
+```
+
+Cursor takes the same URL and header in `mcp.json`; plain code uses `GET /agent/v1/tools` and
+`POST /agent/v1/tools/<name>`. A token reaches one agent and nothing else, and every call passes
+the same policy signer: executed, held for your signature (Telegram or the dashboard), or blocked.
+A blocked or held action is still HTTP 200, with the verdict in the body. Revoking a token, or the
+kill switch, cuts access at once.
 
 ## Security model
 

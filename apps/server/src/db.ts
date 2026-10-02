@@ -17,6 +17,12 @@ export type AgentRecord = {
   rules: { maxTxUsd: number; approveAboveUsd: number; destinations: string[]; programs: string[] };
   registeredAt: string;
   runtime?: "local" | "hosted" | "external";
+  /**
+   * Who holds an external agent's key. `server`: encrypted in this server's store, reachable by
+   * the owner's AI through /agent (remote MCP or HTTP) with a per-agent token. Otherwise the key
+   * is on the owner's machine (`syndromi mcp`).
+   */
+  custody?: "server" | "local";
   /** As in the manifest: token symbol (or mint), amount per period, period. */
   allowance?: { mint: string; amount: number; period: "daily" | "weekly" | "monthly" };
   feeBudgetSol?: number;
@@ -107,6 +113,10 @@ create table if not exists sign_requests (
   used integer not null default 0);
 create table if not exists settings (key text primary key, value text not null);
 create table if not exists owner_txs (id text primary key, data text not null);
+create table if not exists agent_tokens (
+  id text primary key, hash text not null unique, agent_name text not null, owner text not null,
+  prefix text not null, label text not null, created_at text not null, last_used_at text,
+  expires_at text not null, revoked_at text);
 create table if not exists telegram_links (
   chat_id text not null, owner text not null, linked_at text not null,
   primary key (chat_id, owner));
@@ -223,6 +233,56 @@ function strictSsl(url: string) {
 
 const json = (value: unknown) =>
   JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
+
+/** A per-agent access token as stored: only its hash, never the token itself. */
+export type TokenRecord = {
+  id: string;
+  agentName: string;
+  owner: string;
+  /** The first characters of the token, to tell tokens apart in lists and the activity feed. */
+  prefix: string;
+  label: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  expiresAt: string;
+  revokedAt?: string;
+};
+
+export const MAX_LIVE_TOKENS_PER_AGENT = 3;
+
+/** Creating a token would exceed the live-token limit for the agent. */
+export class TokenLimit extends Error {
+  constructor() {
+    super(`an agent can have at most ${MAX_LIVE_TOKENS_PER_AGENT} live tokens; revoke one first`);
+  }
+}
+
+type TokenRow = {
+  id: string;
+  agent_name: string;
+  owner: string;
+  prefix: string;
+  label: string;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string;
+  revoked_at: string | null;
+};
+
+const tokenOf = (r: TokenRow): TokenRecord => ({
+  id: r.id,
+  agentName: r.agent_name,
+  owner: r.owner,
+  prefix: r.prefix,
+  label: r.label,
+  createdAt: r.created_at,
+  expiresAt: r.expires_at,
+  ...(r.last_used_at ? { lastUsedAt: r.last_used_at } : {}),
+  ...(r.revoked_at ? { revokedAt: r.revoked_at } : {}),
+});
+
+const TOKEN_COLUMNS =
+  "id, agent_name, owner, prefix, label, created_at, last_used_at, expires_at, revoked_at";
 
 /** How long a Telegram link code stays valid. */
 export const TELEGRAM_CODE_TTL_MS = 10 * 60 * 1000;
@@ -344,6 +404,7 @@ export class Store {
       name,
     ]);
     await this.run("delete from agent_records where name = ?", [name]);
+    await this.revokeTokensOf([name]);
   }
 
   async saveHostedKey(name: string, encrypted: unknown) {
@@ -527,6 +588,79 @@ export class Store {
   async ownerTx<T>(id: string): Promise<T | undefined> {
     const row = await this.get<{ data: string }>("select data from owner_txs where id = ?", [id]);
     return row ? (JSON.parse(row.data) as T) : undefined;
+  }
+
+  // ------------------------------------------------------------------ agent tokens
+  /** Store a token's hash. Throws TokenLimit when the agent already has the maximum live. */
+  createToken(token: TokenRecord, hash: string, now = new Date()) {
+    return this.serialize(`tokens:${token.agentName}`, async () => {
+      const live = await this.get<{ n: number | string }>(
+        "select count(*) as n from agent_tokens where agent_name = ? and revoked_at is null and expires_at > ?",
+        [token.agentName, now.toISOString()],
+      );
+      if (Number(live?.n ?? 0) >= MAX_LIVE_TOKENS_PER_AGENT) throw new TokenLimit();
+      await this.run(
+        `insert into agent_tokens (id, hash, agent_name, owner, prefix, label, created_at, expires_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          token.id,
+          hash,
+          token.agentName,
+          token.owner,
+          token.prefix,
+          token.label,
+          token.createdAt,
+          token.expiresAt,
+        ],
+      );
+    });
+  }
+
+  async tokenByHash(hash: string): Promise<TokenRecord | undefined> {
+    const row = await this.get<TokenRow>(
+      `select ${TOKEN_COLUMNS} from agent_tokens where hash = ?`,
+      [hash],
+    );
+    return row ? tokenOf(row) : undefined;
+  }
+
+  /** Every token of an agent, newest first (revoked and expired ones included, for display). */
+  async tokens(agentName: string): Promise<TokenRecord[]> {
+    const rows = await this.all<TokenRow>(
+      `select ${TOKEN_COLUMNS} from agent_tokens where agent_name = ? order by created_at desc`,
+      [agentName],
+    );
+    return rows.map(tokenOf);
+  }
+
+  async touchToken(id: string, now = new Date()) {
+    await this.run("update agent_tokens set last_used_at = ? where id = ?", [
+      now.toISOString(),
+      id,
+    ]);
+  }
+
+  /** True if the token was live and is now revoked. */
+  async revokeToken(agentName: string, id: string, now = new Date()): Promise<boolean> {
+    const rows = await this.all<{ id: string }>(
+      `update agent_tokens set revoked_at = ?
+       where id = ? and agent_name = ? and revoked_at is null returning id`,
+      [now.toISOString(), id, agentName],
+    );
+    return rows.length > 0;
+  }
+
+  /** Revoke every live token of these agents (kill switch, agent removal). Returns how many. */
+  async revokeTokensOf(agentNames: string[], now = new Date()): Promise<number> {
+    let revoked = 0;
+    for (const name of agentNames) {
+      const rows = await this.all<{ id: string }>(
+        "update agent_tokens set revoked_at = ? where agent_name = ? and revoked_at is null returning id",
+        [now.toISOString(), name],
+      );
+      revoked += rows.length;
+    }
+    return revoked;
   }
 
   // ------------------------------------------------------------------ telegram

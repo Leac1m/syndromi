@@ -7,6 +7,8 @@ export type AgentView = {
   address: string;
   cluster: string;
   runtime: "local" | "hosted" | "external";
+  /** `server`: the key is held by the server and the owner's AI connects with a token. */
+  custody?: "server" | "local";
   allowance?: { mint: string; amount: number; period: string };
   feeBudgetSol?: number;
   ruleCard: string[];
@@ -36,6 +38,18 @@ export type Overview = {
     topups: { id: string; agentName: string; amount: number; reason: string; expiresAt: string }[];
   };
 };
+
+export type TokenView = {
+  id: string;
+  prefix: string;
+  label: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  expiresAt: string;
+  revokedAt?: string;
+};
+
+export const TOKEN_DAYS = [1, 7, 30, 90] as const;
 
 export type ActivityEvent = { seq: number; agentName: string; type: string; at: string } & Record<
   string,
@@ -138,8 +152,26 @@ export const api = {
     call<{ started: boolean }>(`/owner/agents/${encodeURIComponent(name)}/run`, {}),
   removeAgent: (name: string) =>
     call<{ removed: string }>(`/owner/agents/${encodeURIComponent(name)}`, undefined, "DELETE"),
-  createHosted: (template: string, cluster: Network, manifest: unknown) =>
-    call<AgentView>("/owner/agents", { template, cluster, manifest }),
+  createHosted: (template: string, cluster: Network, manifest: unknown, custody?: "server") =>
+    call<AgentView>("/owner/agents", {
+      template,
+      cluster,
+      manifest,
+      ...(custody ? { custody } : {}),
+    }),
+  tokens: (agent: string) =>
+    call<{ tokens: TokenView[] }>(`/owner/agents/${encodeURIComponent(agent)}/tokens`),
+  createToken: (agent: string, days: number, label: string) =>
+    call<TokenView & { token: string }>(`/owner/agents/${encodeURIComponent(agent)}/tokens`, {
+      days,
+      label,
+    }),
+  revokeToken: (agent: string, id: string) =>
+    call<{ revoked: string }>(
+      `/owner/agents/${encodeURIComponent(agent)}/tokens/${encodeURIComponent(id)}`,
+      undefined,
+      "DELETE",
+    ),
   telegram: () => call<{ enabled: boolean; chats: number }>("/owner/telegram"),
   telegramLink: () => call<{ url: string; expiresAt: string }>("/owner/telegram/link", {}),
   telegramDisconnect: () => call<{ unlinked: number }>("/owner/telegram", undefined, "DELETE"),

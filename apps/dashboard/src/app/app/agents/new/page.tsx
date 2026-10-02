@@ -18,6 +18,8 @@ export default function NewAgent() {
   const [template, setTemplate] = useState<Template>();
   const [manifest, setManifest] = useState<Draft>();
   const [runtime, setRuntime] = useState<"hosted" | "local" | "external">("external");
+  // External agents: who holds the key. The server can only hold it on devnet.
+  const [keyHolder, setKeyHolder] = useState<"server" | "me">("server");
   const [preview, setPreview] = useState<{ ok: boolean; errors?: string[]; ruleCard?: string[] }>();
   const [created, setCreated] = useState<AgentView>();
   const [error, setError] = useState<string>();
@@ -61,11 +63,21 @@ export default function NewAgent() {
       return next;
     });
 
+  const serverHeld = runtime === "external" && keyHolder === "server" && app.network === "devnet";
+  const createsOnServer = runtime === "hosted" || serverHeld;
+
   async function createHosted() {
     if (!template || !manifest) return;
     setError(undefined);
     try {
-      setCreated(await api.createHosted(template.name, app.network, manifest));
+      setCreated(
+        await api.createHosted(
+          template.name,
+          app.network,
+          manifest,
+          serverHeld ? "server" : undefined,
+        ),
+      );
     } catch (e) {
       setError((e as Error).message);
     }
@@ -152,6 +164,18 @@ export default function NewAgent() {
                 }
               />
             </Field>
+            {runtime === "external" && (
+              <Field label="Who holds the key?" wide>
+                <select
+                  value={app.network === "devnet" ? keyHolder : "me"}
+                  disabled={app.network !== "devnet"}
+                  onChange={(e) => setKeyHolder(e.target.value as "server" | "me")}
+                >
+                  <option value="server">No install: syndromi holds it (devnet)</option>
+                  <option value="me">I hold it (CLI; needs the server's admin token)</option>
+                </select>
+              </Field>
+            )}
             {template?.manifest.runtime !== "external" && (
               <Field label="Runs" wide>
                 <select
@@ -183,7 +207,7 @@ export default function NewAgent() {
 
       {manifest && (
         <Card title="4. Create and fund">
-          {runtime === "hosted" ? (
+          {createsOnServer ? (
             created ? (
               <ActionPanel path={`/actions/fund-agent/${encodeURIComponent(created.name)}`} />
             ) : (
@@ -206,7 +230,8 @@ export default function NewAgent() {
           {error && <p className="mt-2 text-sm text-bad">{error}</p>}
           {created && (
             <p className="mt-3 text-sm text-muted">
-              Created. After funding, see it on the{" "}
+              Created. After funding, {serverHeld ? "open the agent to connect your AI, or " : ""}
+              see it on the{" "}
               <Link className="underline" href="/app">
                 overview
               </Link>

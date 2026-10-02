@@ -3,6 +3,7 @@ import Link from "next/link";
 import { use } from "react";
 import { ActionPanel } from "@/components/action-panel";
 import { ActivityFeed } from "@/components/activity-feed";
+import { ConnectAi } from "@/components/connect-ai";
 import { useApp } from "@/components/providers";
 import { RemoveAgent } from "@/components/remove-agent";
 import { RunNow } from "@/components/run-now";
@@ -82,6 +83,11 @@ export default function AgentPage({ params }: { params: Promise<{ name: string }
           <p className="text-sm text-muted">Loading…</p>
         )}
       </Card>
+      {agent?.custody === "server" && (
+        <div className="md:col-span-2">
+          <ConnectAi agent={agent.name} />
+        </div>
+      )}
       <div className="md:col-span-2">
         <Card title="Activity">
           <ActivityFeed agent={name} />

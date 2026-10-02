@@ -173,7 +173,7 @@ keys are devnet only.
 
 - [x] Phase 0: `runtime: external`, the `mcp-agent` default template, `syndromi mcp` (stdio), BYO-AI README, landing page at `/` and the app at `/app`.
 - [ ] Phase 1, a reachable server: Dockerfile + compose + Caddy, `/healthz`, env template, deploy guide; DuckDNS name; dashboard on Vercel; hide `fork`; hosted schedules off by default. _(Oct 2: trial running on Render's free tier + Neon Postgres (`DATABASE_URL`; the store now speaks SQLite and Postgres) + Vercel at `syndromi.vercel.app`; see beta-design "Running now". Still open: the VPS/paid instance (the free one sleeps), `/healthz`, hide `fork`, deploy guide.)_
-- [ ] Phase 2, remote agents: token store (hashed, scoped, revocable, kill-switch aware); server-held external agents (devnet only); `/agent/v1` HTTP API; `/agent/mcp` over Streamable HTTP; rate limits; dashboard "Connect an AI"; tests.
+- [x] Phase 2, remote agents: token store (hashed, scoped, revocable, kill-switch aware); server-held external agents (devnet only); `/agent/v1` HTTP API; `/agent/mcp` over Streamable HTTP; rate limits; dashboard "Connect an AI"; tests. _(Oct 2: see beta-design "Built: Phase 2". Verified end to end with a real MCP client over HTTP against a local server on devnet. Open: a read cache for quotes, an owner allowlist, a token-free CLI path.)_
 - [ ] Phase 3, polish: npm publish of the bundled CLI (owner); a real domain; optional browser chat panel and framework adapters.
 
 ---

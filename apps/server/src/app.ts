@@ -5,6 +5,7 @@ import { mountApproveTopUp } from "./actions/approve-topup.js";
 import { mountFundAgent } from "./actions/fund-agent.js";
 import { mountKillSwitch } from "./actions/kill-switch.js";
 import { mountSpec } from "./actions/spec.js";
+import { mountAgentApi } from "./agent-api.js";
 import { mountApi } from "./api.js";
 import { mountApprovePage } from "./approve-page.js";
 import type { ServerContext } from "./context.js";
@@ -23,6 +24,7 @@ export function createApp(ctx: ServerContext) {
   mountApprovePage(app, ctx);
   mountApi(app, ctx);
   mountOwner(app, ctx);
+  mountAgentApi(app, ctx);
   recordApprovalEvents(ctx);
   // Telegram delivers updates here when the bot runs by webhook (it checks the secret header).
   app.post(WEBHOOK_PATH, async (c) =>

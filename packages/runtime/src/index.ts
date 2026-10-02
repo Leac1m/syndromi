@@ -4,6 +4,7 @@ export * from "./approvals.js";
 export * from "./json.js";
 export * from "./llm/index.js";
 export * from "./loop.js";
+export * from "./mcp.js";
 export * from "./schedule.js";
 export * from "./server-client.js";
 export * from "./watcher.js";

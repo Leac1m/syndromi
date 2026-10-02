@@ -7,6 +7,7 @@ import {
   type EncryptedKeypair,
   type Manifest,
   manifestSchema,
+  ruleCard,
   sendAndConfirm,
 } from "@syndromi/core";
 import {
@@ -20,6 +21,7 @@ import {
   prepareAgent,
   runOnce,
   schedule,
+  type ToolCallOptions,
 } from "@syndromi/runtime";
 import { createToolset, type Toolset } from "@syndromi/tools";
 import type { ServerContext } from "./context.js";
@@ -42,11 +44,23 @@ type Loaded = {
   prompt: string;
   agent: PreparedAgent;
   tools: Toolset;
-  provider: LlmProvider;
+  /** Absent for server-held external agents: their brain is the owner's own AI. */
+  provider?: LlmProvider;
   running: boolean;
   watching: boolean;
   attempts: Map<string, number>;
   job?: { stop(): void; next(): Date | null };
+};
+
+/** How a call reached an agent, recorded on its activity events. */
+export type Via = { via: "mcp-http" | "http"; token: string };
+
+/** What a token-holder's AI needs to act as a server-held agent. */
+export type RemoteAgent = {
+  call: ToolCallOptions;
+  manifest: Manifest;
+  rules: string[];
+  guidance: string;
 };
 
 export type HostedOptions = {
@@ -129,7 +143,7 @@ export class HostedRuntime {
       return;
     }
     for (const record of records) {
-      if (record.runtime !== "hosted" || !record.manifest || this.agents.has(record.name)) continue;
+      if (!this.isRunnable(record) || this.agents.has(record.name)) continue;
       try {
         this.agents.set(record.name, await this.load(record));
         this.opts.log?.(`hosted: ${record.name} on ${record.cluster} loaded`);
@@ -137,6 +151,14 @@ export class HostedRuntime {
         this.opts.log?.(`hosted: ${record.name} not loaded: ${(e as Error).message}`);
       }
     }
+  }
+
+  /** Hosted agents run their own loop; server-held external agents only need the watcher. */
+  private isRunnable(record: AgentRecord) {
+    if (!record.manifest) return false;
+    return (
+      record.runtime === "hosted" || (record.runtime === "external" && record.custody === "server")
+    );
   }
 
   private async load(record: AgentRecord): Promise<Loaded> {
@@ -159,12 +181,17 @@ export class HostedRuntime {
       prompt: record.prompt ?? "",
       agent,
       tools: createToolset(manifest.tools),
-      provider: this.opts.providerFor?.(manifest) ?? createProvider(manifest, this.ctx.config.env),
+      ...(record.runtime === "hosted"
+        ? {
+            provider:
+              this.opts.providerFor?.(manifest) ?? createProvider(manifest, this.ctx.config.env),
+          }
+        : {}),
       running: false,
       watching: false,
       attempts: new Map(),
     };
-    if (this.opts.schedule && manifest.schedule) {
+    if (record.runtime === "hosted" && this.opts.schedule && manifest.schedule) {
       loaded.job = schedule(manifest.schedule, () => this.run(loaded), {
         onError: (e) =>
           this.opts.log?.(`hosted: ${record.name} run failed: ${(e as Error).message}`),
@@ -173,8 +200,35 @@ export class HostedRuntime {
     return loaded;
   }
 
-  private sink(name: string): ActivitySink {
-    return (event) => recordActivity(this.ctx, name, [event]);
+  private sink(name: string, via?: Via): ActivitySink {
+    return (event) => recordActivity(this.ctx, name, [via ? { ...event, ...via } : event]);
+  }
+
+  /**
+   * The tool context for a token-holder's AI acting as `name`, or undefined if the agent is not
+   * loaded (not found, wrong kind, or its key can't be read). Every call made with it still goes
+   * through the agent's policy signer; activity is marked with how the call arrived.
+   */
+  async remote(name: string, via: Via): Promise<RemoteAgent | undefined> {
+    if (!this.agents.has(name)) {
+      this.scan();
+      await this.ready();
+    }
+    const a = this.agents.get(name);
+    if (!a || a.record.runtime !== "external") return undefined;
+    return {
+      manifest: a.manifest,
+      rules: ruleCard(a.manifest),
+      guidance: a.prompt,
+      call: {
+        tools: a.tools,
+        signer: a.agent.signer,
+        ctx: a.agent.ctx,
+        log: new ActivityLog(name, [this.sink(name, via)]),
+        approvals: this.gateway(name),
+        send: (tx) => sendAndConfirm(a.agent.rpc, tx),
+      },
+    };
   }
 
   private gateway(name: string): ApprovalGateway {
@@ -192,7 +246,7 @@ export class HostedRuntime {
   }
 
   private async run(a: Loaded) {
-    if (a.running) return;
+    if (a.running || !a.provider) return;
     a.running = true;
     try {
       await runOnce({

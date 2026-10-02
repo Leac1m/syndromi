@@ -1,6 +1,7 @@
 # Beta design: bring your own AI, remote agents, hosting
 
-Status: proposal, written Oct 1, 2026. Nothing here is built yet except what "What exists" lists.
+Status: written Oct 1, 2026. Phase 0 and Phase 2 are built (Oct 2); see "Built: Phase 2" below for what
+differs from the proposal. Phase 1 is partly live (Render + Neon + Vercel) and Phase 3 is open.
 
 The beta runs on Solana devnet. syndromí supplies **no model keys**: the brain is the tester's own.
 This document covers how a tester connects that brain with no install, how we keep it safe, where
@@ -133,6 +134,33 @@ On an external agent's page, a **Connect an AI** card:
 A later, optional **chat panel** lets a tester paste a provider key that stays in their browser and
 run the loop there against `/agent/v1`. It needs `/agent` CORS for the dashboard origins.
 
+## Built: Phase 2 (Oct 2)
+
+Tokens, server-held external agents, `/agent/v1`, `/agent/mcp`, the dashboard **Connect an AI** card and
+tests are in. Where the build differs from, or adds to, the proposal above:
+
+- **Tokens:** as designed (`syn_` + 32 random bytes, SHA-256 hash only, 3 live per agent, 1/7/30/90
+  days, default 30, checked on every request, revoked by the owner, by removing the agent, and by the
+  kill switch's completion step). The owner sees the prefix and last-used time; the secret is shown once.
+- **Creation:** `POST /owner/agents` with `custody: "server"` (external templates only, devnet only);
+  max 5 agents per owner. The wizard's default for an external agent on devnet is "No install".
+- **Loading:** `HostedRuntime` loads these agents with no model and no schedule, so approved drafts and
+  top-ups still execute with no client connected. `remote()` hands the doors the same tool context.
+- **Doors:** both call `callTool` (MCP through the shared `buildMcpServer`, now in `packages/runtime`).
+  MCP is stateless with plain JSON responses (no SSE), so nothing is lost on a restart.
+- **Limits (defaults):** 60 calls/min and 10 writes/min per token, 200 calls/min per owner, 64 KB bodies,
+  30 s per tool call (the answer says the call may still finish), 20 bad tokens/min per client address
+  (the last `X-Forwarded-For` entry, the one the host's proxy adds). Calls to one agent run one at a
+  time. Over the limit: 429 with `Retry-After` (over MCP, a write over the limit is a tool error).
+- **Transport checks:** a request with an `Origin` outside `DASHBOARD_ORIGINS` is refused; with an https
+  `PUBLIC_URL`, plain http is refused. No CORS is enabled on `/agent`, so browser pages cannot read it
+  (the optional browser chat panel would need that).
+- **Activity:** calls through a token are marked `via: mcp-http | http` with the token prefix; token
+  creation and revocation appear in the feed.
+- **Not done:** reading-cache for quotes, a per-owner allowlist, and a CLI path that needs no admin
+  token (`syndromi init --server` still uses `SYNDROMI_SERVER_TOKEN`, so for testers the server-held
+  path is the way in).
+
 ## Publishing the CLI to npm
 
 You will publish when it is time. What that needs, so the clone stops being required for the CLI
@@ -244,7 +272,7 @@ Phase 1: ship a reachable server
 2. DuckDNS name, VPS up, Telegram relinked, Vercel project with the dashboard.
 3. Hide `fork` (flag), set hosted schedules off by default for the beta.
 
-Phase 2: remote agents (the core)
+Phase 2: remote agents (the core) — built Oct 2
 4. Token store: table, hashing, create, list, revoke; owner endpoints; kill switch disables them.
 5. Server-held external agents: `custody` on the record, `HostedRuntime` watcher-only loading,
    wizard option, devnet-only guard.

@@ -332,3 +332,176 @@ describe("Connect Telegram", () => {
     expect(await ctx.store.telegramChats(bob.address)).toEqual(["100"]);
   });
 });
+
+describe("server-held agents and their tokens", () => {
+  const SECRET_PREFIX = "syn_";
+  const signedIn = async (who = alice) => {
+    const { res } = await signInAs(who);
+    return ((await res.json()) as { token: string }).token;
+  };
+  const mcpTemplate = async (token: string) => {
+    const templates = (await (await req("/owner/templates", { token })).json()) as {
+      name: string;
+      manifest: Record<string, unknown>;
+    }[];
+    const t = templates.find((x) => x.name === "mcp-agent");
+    if (!t) throw new Error("no mcp-agent template");
+    return t;
+  };
+  const create = (token: string, body: Record<string, unknown>) =>
+    req("/owner/agents", { token, body });
+
+  it("creates an external agent whose key the server holds, on devnet only", async () => {
+    const token = await signedIn();
+    const t = await mcpTemplate(token);
+    const body = { template: "mcp-agent", manifest: t.manifest, custody: "server" };
+
+    const fork = await create(token, { ...body, cluster: "fork" });
+    expect(fork.status).toBe(400);
+    expect(await fork.json()).toMatchObject({ error: expect.stringContaining("devnet only") });
+
+    const ok = await create(token, { ...body, cluster: "devnet" });
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toMatchObject({
+      name: "mcp-agent",
+      runtime: "external",
+      custody: "server",
+    });
+    expect(await ctx.store.agent("mcp-agent")).toMatchObject({
+      runtime: "external",
+      custody: "server",
+    });
+    expect(await ctx.store.hostedKey("mcp-agent")).toBeDefined(); // encrypted, held here
+
+    // Only external templates can be server-held (the others run their own model).
+    const yieldScout = await create(token, {
+      template: "yield-scout",
+      cluster: "devnet",
+      custody: "server",
+      manifest: { ...t.manifest, name: "other" },
+    });
+    expect(yieldScout.status).toBe(400);
+  });
+
+  it("limits how many agents one owner can create", async () => {
+    const token = await signedIn();
+    const t = await mcpTemplate(token);
+    for (let i = 1; i <= 5; i++) {
+      const res = await create(token, {
+        template: "mcp-agent",
+        cluster: "devnet",
+        custody: "server",
+        manifest: { ...t.manifest, name: `agent-${i}` },
+      });
+      expect(res.status).toBe(200);
+    }
+    const sixth = await create(token, {
+      template: "mcp-agent",
+      cluster: "devnet",
+      custody: "server",
+      manifest: { ...t.manifest, name: "agent-6" },
+    });
+    expect(sixth.status).toBe(409);
+    // Another owner is unaffected.
+    const bobToken = await signedIn(bob);
+    const bobs = await create(bobToken, {
+      template: "mcp-agent",
+      cluster: "devnet",
+      custody: "server",
+      manifest: { ...t.manifest, name: "bobs-1" },
+    });
+    expect(bobs.status).toBe(200);
+  });
+
+  it("creates, lists and revokes tokens for the owner's agent only", async () => {
+    const token = await signedIn();
+    const t = await mcpTemplate(token);
+    await create(token, {
+      template: "mcp-agent",
+      cluster: "devnet",
+      custody: "server",
+      manifest: t.manifest,
+    });
+    const tokens = (body: unknown = undefined, who = token, id = "") =>
+      req(`/owner/agents/mcp-agent/tokens${id}`, {
+        token: who,
+        ...(body !== undefined ? { body } : {}),
+        ...(id ? { method: "DELETE" } : {}),
+      });
+
+    // Lifetimes come from the fixed list; the default is 30 days.
+    expect((await tokens({ days: 365 })).status).toBe(400);
+    const created = await tokens({ label: "my claude", days: 7 });
+    expect(created.status).toBe(201);
+    const first = (await created.json()) as {
+      token: string;
+      id: string;
+      prefix: string;
+      expiresAt: string;
+    };
+    expect(first.token.startsWith(SECRET_PREFIX)).toBe(true);
+    expect(first.prefix).toBe(first.token.slice(0, 8));
+    const days = (Date.parse(first.expiresAt) - Date.now()) / 86_400_000;
+    expect(days).toBeGreaterThan(6.9);
+    expect(days).toBeLessThan(7.1);
+    const defaulted = (await (await tokens({})).json()) as { expiresAt: string };
+    expect((Date.parse(defaulted.expiresAt) - Date.now()) / 86_400_000).toBeGreaterThan(29.9);
+
+    // The list never carries the secret.
+    const listed = await (await tokens()).text();
+    expect(listed).toContain(first.id);
+    expect(listed).not.toContain(first.token);
+    expect(listed).not.toContain("hash");
+
+    // A fourth live token is refused until one is revoked.
+    await tokens({});
+    expect((await tokens({})).status).toBe(409);
+    expect((await tokens(undefined, token, `/${first.id}`)).status).toBe(200);
+    expect((await tokens(undefined, token, `/${first.id}`)).status).toBe(404); // already revoked
+    expect((await tokens({})).status).toBe(201);
+
+    // Another owner can neither see nor create nor revoke them.
+    const bobToken = await signedIn(bob);
+    expect((await tokens(undefined, bobToken)).status).toBe(404);
+    expect((await tokens({}, bobToken)).status).toBe(404);
+
+    // Token events land in the owner's feed, by prefix only.
+    const feed = JSON.stringify(await ctx.store.activity({ agentNames: ["mcp-agent"] }));
+    expect(feed).toContain("created");
+    expect(feed).not.toContain(first.token);
+  });
+
+  it("offers no tokens for an agent that holds its own key", async () => {
+    const token = await signedIn();
+    await ctx.store.upsertAgent({
+      name: "local-one",
+      address: (await generateKeyPairSigner()).address,
+      owner: alice.address,
+      cluster: "devnet",
+      allowanceMint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" as Address,
+      runtime: "external",
+      rules: { maxTxUsd: 10, approveAboveUsd: 5, destinations: ["self"], programs: ["jupiter"] },
+      registeredAt: new Date().toISOString(),
+    });
+    const res = await req("/owner/agents/local-one/tokens", { token, body: {} });
+    expect(res.status).toBe(409);
+  });
+
+  it("revokes an agent's tokens when it is removed", async () => {
+    const token = await signedIn();
+    const t = await mcpTemplate(token);
+    await create(token, {
+      template: "mcp-agent",
+      cluster: "devnet",
+      custody: "server",
+      manifest: t.manifest,
+    });
+    const made = (await (
+      await req("/owner/agents/mcp-agent/tokens", { token, body: {} })
+    ).json()) as { id: string };
+    ctx.rpc = () => fakeRpc() as never; // no delegations
+    expect((await req("/owner/agents/mcp-agent", { token, method: "DELETE" })).status).toBe(200);
+    const stored = (await ctx.store.tokens("mcp-agent")).find((x) => x.id === made.id);
+    expect(stored?.revokedAt).toBeDefined();
+  });
+});

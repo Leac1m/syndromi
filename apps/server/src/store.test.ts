@@ -270,6 +270,41 @@ describe.each(engines)("store on $name", (engine) => {
     expect(await store.unlinkTelegram(OWNER)).toBe(2);
   });
 
+  it("keeps tokens as hashes, caps the live ones, and revokes on demand", async () => {
+    const token = (id: string, expiresAt: string) => ({
+      id,
+      agentName: "a-1",
+      owner: OWNER,
+      prefix: "syn_abcd",
+      label: "",
+      createdAt: "2026-10-01T00:00:00.000Z",
+      expiresAt,
+    });
+    const now = new Date("2026-10-02T00:00:00.000Z");
+    await store.createToken(token("k_1", "2026-11-01T00:00:00.000Z"), "hash-1", now);
+    await store.createToken(token("k_2", "2026-11-01T00:00:00.000Z"), "hash-2", now);
+    await store.createToken(token("k_old", "2026-10-01T12:00:00.000Z"), "hash-old", now); // already expired
+    // Racing creations still respect the cap of three live tokens.
+    const raced = await Promise.allSettled([
+      store.createToken(token("k_3", "2026-11-01T00:00:00.000Z"), "hash-3", now),
+      store.createToken(token("k_4", "2026-11-01T00:00:00.000Z"), "hash-4", now),
+    ]);
+    expect(raced.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+
+    expect((await store.tokenByHash("hash-1"))?.id).toBe("k_1");
+    expect(await store.tokenByHash("nope")).toBeUndefined();
+    expect((await store.tokens("a-1")).length).toBe(4);
+    expect(JSON.stringify(await store.tokens("a-1"))).not.toContain("hash-");
+
+    await store.touchToken("k_1", now);
+    expect((await store.tokenByHash("hash-1"))?.lastUsedAt).toBe(now.toISOString());
+    expect(await store.revokeToken("a-1", "k_1", now)).toBe(true);
+    expect(await store.revokeToken("a-1", "k_1", now)).toBe(false);
+    expect(await store.revokeToken("b-1", "k_2", now)).toBe(false); // not that agent's token
+    expect(await store.revokeTokensOf(["a-1"], now)).toBe(3); // k_2, k_old, and the raced winner
+    expect(await store.revokeTokensOf(["a-1"], now)).toBe(0);
+  }, 30_000);
+
   it("still has everything after a restart", async () => {
     const reopened = engine.open();
     try {

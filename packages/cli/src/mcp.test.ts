@@ -5,11 +5,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { generateKeyPairSigner, type Signature, type Transaction } from "@solana/kit";
 import { createPolicySigner } from "@syndromi/core";
-import { ActivityLog, LocalApprovalGateway, memorySink } from "@syndromi/runtime";
+import { ActivityLog, buildMcpServer, LocalApprovalGateway, memorySink } from "@syndromi/runtime";
 import { createToolset } from "@syndromi/tools";
 import { fakeContext } from "@syndromi/tools/testing";
 import { describe, expect, it, vi } from "vitest";
-import { buildMcpServer } from "./commands/mcp.js";
 
 const ATTACKER = "AhLo5HbFDsWtnC4EjkUqmyUPHNpYy4sxTVtH1Tz8MMPS";
 

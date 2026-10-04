@@ -1,4 +1,4 @@
-// Day-1 spike: a Jupiter swap (USDC → SOL) built from /swap/v2/build and executed on a
+// Phase-1 spike: a Jupiter swap (USDC → SOL) built from /swap/v2/build and executed on a
 // Surfpool mainnet fork. This is the shape the jupiter-swap tool will use: the API returns raw
 // instructions, we assemble an unsigned v0 transaction, and only then does anything sign it.
 //

@@ -10,7 +10,7 @@ export type TokenInfo = {
   pythFeedId?: string;
 };
 
-// Mainnet mints are verified via Jupiter's token list (isVerified) and Day-1 swaps; the devnet
+// Mainnet mints are verified via Jupiter's token list (isVerified) and Phase-1 swaps; the devnet
 // USDC mint is Circle's, checked onchain (SPL mint, 6 decimals). Spoofed lookalikes exist, so
 // mints are only ever resolved through this registry, never from untrusted input.
 export const TOKENS: readonly TokenInfo[] = [

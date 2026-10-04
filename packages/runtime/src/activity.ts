@@ -1,5 +1,5 @@
 // Structured activity log: every step of a run, as one JSON object per line. The dashboard's
-// feed (Day 5) reads the same events from the server; locally they land in activity.jsonl.
+// feed (Phase 5) reads the same events from the server; locally they land in activity.jsonl.
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { toJson } from "./json.js";

@@ -1,7 +1,7 @@
 # Beta design: bring your own AI, remote agents, hosting
 
-Status: written Oct 1, 2026. Phase 0 and Phase 2 are built (Oct 2); see "Built: Phase 2" below for what
-differs from the proposal. Phase 1 is partly live (Render + Neon + Vercel) and Phase 3 is open.
+Status: written Oct 1, 2026. Beta phases 0 and 2 are built (Oct 2); see "Built: Beta phase 2" below for what
+differs from the proposal. Beta phase 1 is partly live (Render + Neon + Vercel) and beta phase 3 is open.
 
 The beta runs on Solana devnet. syndromí supplies **no model keys**: the brain is the tester's own.
 This document covers how a tester connects that brain with no install, how we keep it safe, where
@@ -134,7 +134,7 @@ On an external agent's page, a **Connect an AI** card:
 A later, optional **chat panel** lets a tester paste a provider key that stays in their browser and
 run the loop there against `/agent/v1`. It needs `/agent` CORS for the dashboard origins.
 
-## Built: Phase 2 (Oct 2)
+## Built: Beta phase 2 (Oct 2)
 
 Tokens, server-held external agents, `/agent/v1`, `/agent/mcp`, the dashboard **Connect an AI** card and
 tests are in. Where the build differs from, or adds to, the proposal above:
@@ -265,14 +265,14 @@ process and some memory; that is an optional optimisation.
 
 ## Work plan
 
-Phase 0 (done): external agents, `mcp-agent` template, stdio MCP, BYO-AI README section.
+Beta phase 0 (done): external agents, `mcp-agent` template, stdio MCP, BYO-AI README section.
 
-Phase 1: ship a reachable server
+Beta phase 1: ship a reachable server
 1. Dockerfile, compose, Caddyfile, `/healthz`, env template, deploy guide.
 2. DuckDNS name, VPS up, Telegram relinked, Vercel project with the dashboard.
 3. Hide `fork` (flag), set hosted schedules off by default for the beta.
 
-Phase 2: remote agents (the core) — built Oct 2
+Beta phase 2: remote agents (the core) — built Oct 2
 4. Token store: table, hashing, create, list, revoke; owner endpoints; kill switch disables them.
 5. Server-held external agents: `custody` on the record, `HostedRuntime` watcher-only loading,
    wizard option, devnet-only guard.
@@ -282,12 +282,12 @@ Phase 2: remote agents (the core) — built Oct 2
 9. Tests: token lifecycle, policy block over both doors, rate limits, revoke, kill switch, an
    end-to-end MCP client call.
 
-Phase 3: beta polish
+Beta phase 3: beta polish
 10. npm publish of the bundled CLI (yours, when ready); `claudeAddCommand` update.
 11. Real domain, move the two origins.
 12. Optional browser chat panel; framework adapters on `/agent/v1`.
 
-Rough effort: Phase 1 about a day, Phase 2 about two days, Phase 3 as time allows.
+Rough effort: beta phase 1 about a day, beta phase 2 about two days, beta phase 3 as time allows.
 
 ## Decisions needed
 

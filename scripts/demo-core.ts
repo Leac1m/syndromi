@@ -1,4 +1,4 @@
-// Day-2 "done when": create an agent, grant it an allowance, and pull, using only
+// Phase-2 "done when": create an agent, grant it an allowance, and pull, using only
 // @syndromi/core, on devnet. The owner is the Solana CLI wallet; the mint is a fresh test mint.
 //
 // Usage: pnpm demo:core

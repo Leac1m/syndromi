@@ -14,7 +14,7 @@ One owner wallet (the **bag**) funds many agents:
   from Telegram (phone) or the dashboard.
 - One **kill switch** revokes every allowance.
 
-Built for the Colosseum Crypto World's Fair (Solana track). MIT licensed.
+MIT licensed.
 
 ## Why now
 
@@ -181,8 +181,8 @@ app under `/app` (connect Phantom, bag, agents, approvals, kill switch). Both ar
 
 ## Status and roadmap
 
-v0.1.0 (hackathon build): everything above works on devnet and on a Surfpool mainnet fork
-(for Jupiter swaps). The recorded demo runs on mainnet with a few dollars.
+v0.1.0: everything above works on devnet and on a Surfpool mainnet fork (for Jupiter swaps).
+Mainnet needs `--mainnet` and a typed confirmation; keep runs to a few dollars for now.
 
 Next:
 - a cloud deployment of the hosted runtime (today it runs on the owner's machine behind a

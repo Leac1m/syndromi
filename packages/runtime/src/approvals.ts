@@ -1,5 +1,5 @@
-// Where held proposals and top-up requests go. Day 3 writes JSON files next to the agent's
-// keypair; Day 4's server implements the same interface and pushes them to Telegram as Blinks.
+// Where held proposals and top-up requests go. Phase 3 writes JSON files next to the agent's
+// keypair; Phase 4's server implements the same interface and pushes them to Telegram as Blinks.
 //
 // A draft stores what the tool was asked to do, not a signed transaction: blockhashes expire in
 // about a minute. On approval the runtime re-runs the tool, re-evaluates the policy, and signs

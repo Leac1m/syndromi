@@ -1,4 +1,4 @@
-// Day-1 spike: prove the Subscriptions program covers what syndromí needs, on devnet.
+// Phase-1 spike: prove the Subscriptions program covers what syndromí needs, on devnet.
 // Owner = Solana CLI wallet (the "bag"). Agent = fresh keypair each run.
 // Recurring delegation = the agent's allowance; fixed delegation = an approved top-up;
 // revokeDelegation = the kill switch.

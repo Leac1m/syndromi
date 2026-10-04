@@ -42,7 +42,7 @@ export async function run(
   await confirmMainnet(opts.cluster, io, `run agent ${manifest.name}, which may send transactions`);
   if (manifest.runtime === "hosted") {
     io.print(
-      `note: ${manifest.name} is a hosted agent; running it locally (deploy arrives on Day 6)`,
+      `note: ${manifest.name} is a hosted agent; running it locally (\`syndromi deploy\` runs it on the server)`,
     );
   }
 

@@ -1,4 +1,4 @@
-// Day-1 spike (timeboxed): can Swig enforce syndromí's outflow rules onchain?
+// Phase-1 spike (timeboxed): can Swig enforce syndromí's outflow rules onchain?
 // Runs on the Surfpool mainnet fork against the real Swig program.
 //
 // The owner creates a Swig and funds its wallet with USDC. The agent gets a role limited to the

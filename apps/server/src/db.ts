@@ -26,7 +26,7 @@ export type AgentRecord = {
   /** As in the manifest: token symbol (or mint), amount per period, period. */
   allowance?: { mint: string; amount: number; period: "daily" | "weekly" | "monthly" };
   feeBudgetSol?: number;
-  /** Hosted agents: the full manifest and prompt the server runs (Day 6). */
+  /** Hosted agents: the full manifest and prompt the server runs (Phase 6). */
   manifest?: Record<string, unknown>;
   prompt?: string;
 };

@@ -1,4 +1,5 @@
 // The marketing page at "/". Server components only: it ships no wallet or app code.
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -54,9 +55,10 @@ function Nav() {
   return (
     <header className="sticky top-0 z-5 border-b border-line bg-bg/90 backdrop-blur">
       <div className={`${wrap} flex h-16 items-center gap-6`}>
-        <Link href="/" className="text-xl font-extrabold tracking-tight">
+        <Link href="/" className="flex items-center gap-2 text-xl font-extrabold tracking-tight">
+          <Image src="/icon.png" alt="syndromí logo" width={28} height={32} className="h-7 w-auto" />
           syndromí{" "}
-          <span className="ml-1 rounded bg-brand-soft px-1.5 py-0.5 align-middle text-xs font-bold text-brand">
+          <span className="rounded bg-brand-soft px-1.5 py-0.5 text-xs font-bold text-brand">
             beta
           </span>
         </Link>
@@ -560,7 +562,10 @@ function Footer() {
   return (
     <footer className="mt-24 border-t border-line py-7 text-[15px] text-muted">
       <div className={`${wrap} flex flex-wrap items-center gap-x-6 gap-y-3`}>
-        <span className="text-lg font-extrabold tracking-tight text-fg">syndromí</span>
+        <span className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-fg">
+          <Image src="/icon.png" alt="syndromí logo" width={24} height={28} className="h-6 w-auto" />
+          syndromí
+        </span>
         <span>MIT licensed · Public beta on Solana devnet</span>
         <span className="ml-auto flex gap-5">
           <Link href="/app" className="underline">

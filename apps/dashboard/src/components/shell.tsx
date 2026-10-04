@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { short } from "@/lib/config";
@@ -9,7 +10,8 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <div className="mx-auto max-w-5xl px-4 pb-16">
       <header className="flex flex-wrap items-center gap-3 py-5">
-        <Link href="/app" className="mr-auto text-xl font-bold tracking-tight">
+        <Link href="/app" className="mr-auto flex items-center gap-2 text-xl font-bold tracking-tight">
+          <Image src="/icon.png" alt="syndromí logo" width={28} height={32} className="h-7 w-auto" />
           syndromí
         </Link>
         <div className="flex overflow-hidden rounded-lg border border-line text-sm">

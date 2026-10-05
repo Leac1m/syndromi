@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ActionPanel } from "@/components/action-panel";
 import { ActivityFeed } from "@/components/activity-feed";
+import { GuidedTour } from "@/components/guided-tour";
 import { useApp } from "@/components/providers";
 import { RunNow } from "@/components/run-now";
 import { TelegramCard } from "@/components/telegram-card";
@@ -30,6 +31,12 @@ export default function Overview() {
   return (
     <div className="grid gap-4 md:grid-cols-3">
       {error && !unreachable && <p className="text-sm text-bad md:col-span-3">Server: {error}</p>}
+
+      {data && (
+        <div className="empty:hidden md:col-span-3">
+          <GuidedTour data={data} onChange={refresh} />
+        </div>
+      )}
 
       <Card title="Bag">
         <p className="text-3xl font-bold tabular-nums">
@@ -71,6 +78,11 @@ export default function Overview() {
                   {a.demo && (
                     <span className="rounded border border-warn px-1.5 py-0.5 text-xs text-warn">
                       demo
+                    </span>
+                  )}
+                  {a.script === "tour" && (
+                    <span className="rounded border border-accent px-1.5 py-0.5 text-xs text-accent">
+                      guided tour
                     </span>
                   )}
                   <span className="rounded bg-line px-1.5 py-0.5 text-xs">{a.runtime}</span>

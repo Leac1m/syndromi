@@ -14,6 +14,8 @@ export type AgentView = {
   ruleCard: string[];
   funded: boolean;
   demo?: boolean;
+  /** A scripted agent's script, e.g. "tour" for the guided tour. */
+  script?: string;
   nextRun?: number | null;
   allowanceLeft?: { remaining: number; limit: number; periodEndsAt?: number };
   topUps: { remaining: number; expiresAt: number }[];
@@ -75,6 +77,13 @@ export type Template = {
   prompt: string;
   ruleCard: string[];
 };
+
+/** A template that runs a built-in script instead of a model (`model: script:<name>`). */
+export const isScripted = (t: Template) => String(t.manifest.model ?? "").startsWith("script:");
+
+/** The guided tour's template, and the name one owner's tour agent gets (names are per server). */
+export const TOUR_TEMPLATE = "guided-tour";
+export const tourAgentName = (owner: string) => `tour-${owner.slice(0, 8).toLowerCase()}`;
 
 const KEY = "syndromi.session";
 let session: { token: string; owner: string } | undefined;

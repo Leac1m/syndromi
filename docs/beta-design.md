@@ -270,6 +270,33 @@ Testers no longer need Circle's faucet. syndromí runs its own devnet test token
   (held for approval), tries a transfer to a stranger (blocked) and asks for a top-up. It needs the
   treasury key and sends real devnet transactions, so it is skipped unless asked for.
 
+### The guided run (Beta phase 6, Oct 5)
+
+A new owner sees the rules work before connecting anything: no AI, no key, no install.
+
+- **A scripted model is first class.** `model: script:tour` in a manifest runs a fixed list of
+  tool calls (`tourScript` in `packages/runtime/src/llm/index.ts`) instead of an LLM. It goes
+  through `runOnce` and `callTool` like any agent, so every verdict is the real policy's. Such an
+  agent needs no key, schedule or prompt. This is separate from the `demo.*` switches, which stay
+  for the injection demo only.
+- **The tour** (`templates/guided-tour`, 20 test USDC a week, $5 approval threshold, $10 cap):
+  check balances; pull 10 USDC (executes); quote and swap 3 USDC on the test pool (executes); swap
+  6 USDC (held: above the threshold); send 1 USDC to an address nobody allowed (blocked); ask for
+  a 10 USDC top-up. A test keeps the script's amounts and the template's rules in step.
+- **Dashboard:** the overview shows **Try a guided run** to an owner with no agents (and for as
+  long as their tour agent exists): get devnet SOL, get test USDC, create the tour agent, fund it,
+  run it, then "do it with your own AI" (the wizard). Agent names are unique per server, so each
+  owner's tour agent is `tour-<first 8 characters of their address>`. The wizard does not list the
+  tour template.
+- **Why not instead of a real AI:** the tester's AI was never the obstacle to key safety (we hold
+  no model keys; the tester's AI connects with a per-agent token). The script is there because
+  the first minute should not require setting up an MCP client.
+- **Checked for real on devnet:** through a local server, as the dashboard drives it: create,
+  fund, run (two executed, one held, one blocked, one top-up request), approve the held swap (the
+  server executed it), approve the top-up (the server pulled it).
+  `SYNDROMI_DEVNET_E2E=1 pnpm test packages/runtime/src/devnet.test.ts` repeats the run itself.
+  The card was built and type-checked but not yet looked at in a browser.
+
 ### Choosing the domain
 
 | Option | Stable? | Cost | Fit |

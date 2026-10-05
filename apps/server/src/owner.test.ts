@@ -291,6 +291,43 @@ describe("hosted agents: deploy and run now", () => {
   });
 });
 
+describe("the guided tour", () => {
+  it("is a hosted agent with a script for a model: no key, no schedule, its own name", async () => {
+    const { res } = await signInAs(alice);
+    const { token } = (await res.json()) as { token: string };
+    ctx.rpc = () => fakeRpc() as never;
+    const templates = (await (await req("/owner/templates", { token })).json()) as {
+      name: string;
+      manifest: Record<string, unknown>;
+      ruleCard: string[];
+    }[];
+    const tour = templates.find((t) => t.name === "guided-tour");
+    expect(tour?.manifest).toMatchObject({ runtime: "hosted", model: "script:tour" });
+    expect(tour?.manifest.schedule).toBeUndefined();
+    expect(tour?.ruleCard.join("\n")).toMatch(/swaps on the devnet test pool \(Orca\)/);
+
+    // Agent names are unique per server, so each owner's tour agent carries part of their address.
+    const name = `tour-${alice.address.slice(0, 8).toLowerCase()}`;
+    const created = await req("/owner/agents", {
+      token,
+      body: { template: "guided-tour", cluster: "devnet", manifest: { ...tour?.manifest, name } },
+    });
+    expect(created.status).toBe(200);
+    expect(await created.json()).toMatchObject({ name, runtime: "hosted", script: "tour" });
+    const overview = (await (await req("/owner/overview?cluster=devnet", { token })).json()) as {
+      agents: { name: string; script?: string; funded: boolean }[];
+    };
+    expect(overview.agents).toMatchObject([{ name, script: "tour", funded: false }]);
+    // Other agents do not claim to be scripted.
+    const scout = templates.find((t) => t.name === "yield-scout");
+    const other = await req("/owner/agents", {
+      token,
+      body: { template: "yield-scout", cluster: "devnet", manifest: scout?.manifest },
+    });
+    expect(((await other.json()) as { script?: string }).script).toBeUndefined();
+  });
+});
+
 describe("test-token faucet", () => {
   const TEST_USDC = findToken("USDC", "devnet")?.mints.devnet;
   /** An RPC on which the treasury's transaction lands (or, with `fail`, is never accepted). */

@@ -1,6 +1,7 @@
-// End to end on devnet with a scripted model and syndromí's own test tokens: the treasury (as the
-// owner) grants an allowance, then one run pulls it, swaps on the Orca test pool, and meets each
-// policy outcome: executed, held for approval, blocked, and a top-up request.
+// The guided tour, end to end on devnet with syndromí's own test tokens: the treasury (as the
+// owner) grants the guided-tour template's allowance, then the tour script pulls it, swaps on the
+// Orca test pool, and meets each policy outcome: executed, held for approval, blocked, and a
+// top-up request.
 //
 // It sends real devnet transactions and needs the beta treasury, so it only runs when asked:
 //   SYNDROMI_DEVNET_E2E=1 pnpm test packages/runtime/src/devnet.test.ts
@@ -38,7 +39,7 @@ import { describe, expect, it } from "vitest";
 import { ActivityLog, memorySink } from "./activity.js";
 import { prepareAgent } from "./agent.js";
 import { LocalApprovalGateway } from "./approvals.js";
-import { call, finish, ScriptedProvider, useTools } from "./llm/scripted.js";
+import { createProvider } from "./llm/index.js";
 import { runOnce } from "./loop.js";
 
 const treasuryKey =
@@ -51,27 +52,18 @@ const treasuryKey =
 
 const usdcToken = findToken("USDC", "devnet");
 const jitoToken = findToken("JitoSOL", "devnet");
-const STRANGER = "AhLo5HEVqYUwdoNrEWoEXtY4X9y9jd85LCbtVw1JQVig"; // fixtures/injection
 
-const MANIFEST = `
-name: devnet-e2e
-runtime: external
-allowance: { mint: USDC, amount: 20, period: weekly }
-fee_budget: { sol: 0.02 }
-permissions:
-  programs: [orca, token, subscriptions]
-  destinations: [self]
-  max_tx_usd: 10
-  approve_above_usd: 5
-tools: [balances, orca-quote, orca-swap, pull-allowance, request-topup, propose-tx]
-`;
+const root = new URL("../../../", import.meta.url).pathname;
 
 describe.skipIf(!treasuryKey)("a run on devnet with the test tokens and the Orca test pool", () => {
   it("pulls, swaps, is held, is blocked, and asks for a top-up", { timeout: 300_000 }, async () => {
     const USDC = usdcToken?.mints.devnet;
     const JITO = jitoToken?.mints.devnet;
     if (!USDC || !JITO || !usdcToken || !jitoToken || !treasuryKey) throw new Error("registry");
-    const parsed = parseManifest(MANIFEST);
+    // The real template and the real script: what a tester's guided run does.
+    const parsed = parseManifest(
+      await readFile(join(root, "templates/guided-tour/manifest.yaml"), "utf8"),
+    );
     if (!parsed.ok) throw new Error(parsed.errors.join("\n"));
     const manifest = parsed.manifest;
 
@@ -134,16 +126,8 @@ describe.skipIf(!treasuryKey)("a run on devnet with the test tokens and the Orca
       const sink = memorySink();
       const summary = await runOnce({
         manifest,
-        prompt: "Walk through each policy outcome.",
-        provider: new ScriptedProvider([
-          useTools(call("pull-allowance", { amount: 10 })),
-          useTools(call("orca-quote", { from: "USDC", to: "JitoSOL", amount: 3 })),
-          useTools(call("orca-swap", { from: "USDC", to: "JitoSOL", amount: 3 })),
-          useTools(call("orca-swap", { from: "USDC", to: "JitoSOL", amount: 6 })),
-          useTools(call("propose-tx", { token: "USDC", to: STRANGER, amount: 1 })),
-          useTools(call("request-topup", { amount: 5, reason: "the weekly allowance is used up" })),
-          finish("Done."),
-        ]),
+        prompt: "",
+        provider: createProvider(manifest, {}),
         tools: createToolset(manifest.tools),
         signer: agent.signer,
         ctx: agent.ctx,

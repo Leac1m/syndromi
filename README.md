@@ -28,6 +28,13 @@ agent budgets. syndromí adds what an owner of many agents needs on top:
 - a live activity feed;
 - one-click revocation.
 
+## See it work in two minutes (devnet, nothing to install)
+
+Open the dashboard, connect Phantom on devnet and sign in. With no agents yet, the overview offers
+**Try a guided run**: get test tokens, create a scripted agent (no AI, no keys), fund it, and run
+it. One run makes a swap that goes through, one that waits for your signature, a transfer that is
+blocked, and a top-up request. Then connect your own AI.
+
 ## Quickstart with an agent you already have (devnet)
 
 The default template, `mcp-agent`, is a budgeted wallet for Claude, Cursor or any MCP client.

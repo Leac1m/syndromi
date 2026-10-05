@@ -31,7 +31,7 @@ export async function run(
   env: Env,
 ) {
   const { manifest: declared } = await loadAgentDir(dir);
-  if (declared.runtime === "external" || !declared.schedule) {
+  if (declared.runtime === "external") {
     throw new CliError(
       `${declared.name} is an external agent: an MCP client is its brain. Start it with: syndromi mcp ${dir}`,
     );
@@ -87,7 +87,8 @@ export async function run(
     return result;
   };
 
-  if (opts.once) {
+  // A scripted agent has no schedule: it runs when asked, once.
+  if (opts.once || !cron) {
     await watch(); // anything approved since the last run executes first
     return once();
   }

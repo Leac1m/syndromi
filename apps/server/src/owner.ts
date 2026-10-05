@@ -16,6 +16,7 @@ import {
   networkOf,
   parseManifest,
   ruleCard,
+  scriptOf,
   toUiAmount,
 } from "@syndromi/core";
 import { type Context, Hono } from "hono";
@@ -528,6 +529,7 @@ export function publicAgent(a: AgentRecord) {
           },
         })
       : [];
+  const script = scriptOf((a.manifest as { model?: string } | undefined)?.model);
   return {
     name: a.name,
     address: a.address,
@@ -541,6 +543,8 @@ export function publicAgent(a: AgentRecord) {
     registeredAt: a.registeredAt,
     /** Demo-only agents (the injection demo) are labelled as such in the dashboard. */
     demo: Boolean(a.manifest && (a.manifest as { demo?: unknown }).demo),
+    /** A scripted agent (`model: script:<name>`, e.g. the guided tour) names its script. */
+    ...(script ? { script } : {}),
   };
 }
 

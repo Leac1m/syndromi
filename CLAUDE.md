@@ -34,6 +34,7 @@ The Foundation gave Solana allowances. syndromí turns them into safe, governabl
 - **Bag** = the owner's USDC token account (recommend a dedicated Phantom account). The program's per-(user, mint) Subscription Authority PDA gates every pull.
 - **Agent wallet** = a keypair per agent. Local: encrypted keypair file under `~/.syndromi/`. Hosted: the server generates the key and stores it encrypted with `SYNDROMI_HOSTED_SECRET` (managed MPC/TEE custody is roadmap).
 - **Hosting** (Phase 6): the server runs hosted agents in-process (`apps/server/src/hosted.ts`). Locally it is reached through a Cloudflare quick tunnel (`pnpm tunnel`) for phone approvals; the beta runs on Render + Neon + Vercel (see `docs/beta-design.md`, "Running now").
+- **Scripted agents** (Beta phase 6): `model: script:tour` runs a fixed list of tool calls instead of an LLM (`tourScript` in `packages/runtime/src/llm/index.ts`), through the same loop and policy. It needs no key, schedule or prompt. `templates/guided-tour` uses it for the dashboard's "Try a guided run"; a test keeps the script's amounts in step with that template's rules.
 - **Demo-only switches**: manifest `demo: { injection, unguarded, script }` exists only for the prompt-injection demo (`fixtures/injection/pool-scout`). Never set them on real agents; the prompt guard is on by default and tested.
 - **Fee budget** = small SOL transfer from owner to agent wallet at creation (covers tx fees and token-account rent).
 - **Policy layer** = a signer wrapper in `packages/core`. Nothing signs without passing it. Swig smart-wallet permissions passed the Phase-1 spike (see `docs/architecture.md`). They are a first stretch item layered on top of the offchain signer, never a replacement for it.
@@ -69,6 +70,8 @@ packages/
 templates/
   dca-agent/     manifest + prompt
   yield-scout/   manifest + prompt
+  mcp-agent/     manifest + prompt (external: your own AI is the brain; the wizard's default)
+  guided-tour/   manifest only (scripted: the guided run)
 fixtures/
   injection/     malicious tool output used in the security demo
 docs/
@@ -83,7 +86,7 @@ scripts/
 ```yaml
 name: yield-scout
 runtime: hosted            # or local
-model: byok:anthropic      # or openai-compatible:<url>
+model: byok:anthropic      # or openai-compatible:<url>, or script:tour (no LLM, no key)
 model_id: claude-opus-5-5  # required for openai-compatible, e.g. gemini-3.8-flash
 fallback_model: anthropic:claude-opus-5-5  # optional backup; else SYNDROMI_FALLBACK_MODEL
 api_key_env: ANTHROPIC_API_KEY  # name of the env var holding the key, never the key

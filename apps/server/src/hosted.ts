@@ -8,6 +8,7 @@ import {
   type Manifest,
   manifestSchema,
   ruleCard,
+  scriptOf,
   sendAndConfirm,
 } from "@syndromi/core";
 import {
@@ -17,6 +18,7 @@ import {
   createProvider,
   executeApprovals,
   type LlmProvider,
+  type OwnerOutcome,
   type PreparedAgent,
   prepareAgent,
   runOnce,
@@ -36,6 +38,8 @@ import {
 } from "./records.js";
 
 const WATCH_EVERY_MS = 5_000;
+const OWNER_POLL_MS = 1_000;
+const OWNER_WAIT_MS = 10 * 60_000;
 const RESCAN_EVERY_MS = 30_000;
 
 type Loaded = {
@@ -263,6 +267,8 @@ export class HostedRuntime {
         return;
       }
       await runOnce({
+        // A scripted agent is a guided run with its owner watching: it waits for their answer.
+        ...(scriptOf(a.manifest.model) ? { awaitOwner: (r) => this.awaitOwner(a, r) } : {}),
         manifest: a.manifest,
         prompt: a.prompt,
         provider: a.provider,
@@ -275,6 +281,38 @@ export class HostedRuntime {
       });
     } finally {
       a.running = false;
+    }
+  }
+
+  /**
+   * Wait for what the owner does with a held request, and for what follows: an approval is only
+   * over once the watcher has executed it. Gives up after SYNDROMI_OWNER_WAIT_MS (ten minutes).
+   */
+  private async awaitOwner(
+    a: Loaded,
+    request: { kind: "draft" | "topup"; id: string },
+  ): Promise<OwnerOutcome> {
+    const { store, config } = this.ctx;
+    const limit = Number(config.env.SYNDROMI_OWNER_WAIT_MS) || OWNER_WAIT_MS;
+    const deadline = Date.now() + limit;
+    for (;;) {
+      const record =
+        request.kind === "draft" ? await store.draft(request.id) : await store.topUp(request.id);
+      if (!record) return { status: "failed", error: "the request no longer exists" };
+      if (record.status === "approved") {
+        // Do not leave the owner waiting for the next watcher tick.
+        await this.watch(a);
+      } else if (record.status !== "pending") {
+        return {
+          status: record.status,
+          ...(record.resultSignature ? { signature: record.resultSignature } : {}),
+          ...(record.resultError ? { error: record.resultError } : {}),
+        };
+      }
+      // Checked one last time at the deadline, so an answer given just before it still counts.
+      const left = deadline - Date.now();
+      if (left <= 0) return { status: "timeout" };
+      await new Promise((r) => setTimeout(r, Math.min(OWNER_POLL_MS, left)));
     }
   }
 

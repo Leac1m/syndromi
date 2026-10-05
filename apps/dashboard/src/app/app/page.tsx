@@ -5,6 +5,7 @@ import { ActionPanel } from "@/components/action-panel";
 import { ActivityFeed } from "@/components/activity-feed";
 import { GuidedTour } from "@/components/guided-tour";
 import { useApp } from "@/components/providers";
+import { RejectButton } from "@/components/reject-button";
 import { RunNow } from "@/components/run-now";
 import { TelegramCard } from "@/components/telegram-card";
 import { Card } from "@/components/ui";
@@ -103,7 +104,7 @@ export default function Overview() {
                     ? `${a.allowanceLeft.remaining} of ${a.allowanceLeft.limit} ${a.allowance?.mint ?? ""} left this ${periodWord(a.allowance?.period)}`
                     : "Needs funding"}
                 </p>
-                {a.runtime === "hosted" && a.funded && !a.paused && (
+                {a.runtime === "hosted" && a.funded && !a.paused && !a.script && (
                   <div className="mt-1.5">
                     <RunNow name={a.name} nextRun={a.nextRun ?? null} />
                   </div>
@@ -133,11 +134,17 @@ export default function Overview() {
             {data?.pending.drafts.map((d) => (
               <div key={d.id} className="rounded-xl border border-line p-4">
                 <ActionPanel path={`/actions/approve-draft/${d.id}`} onDone={refresh} />
+                <div className="mt-2">
+                  <RejectButton id={d.id} onDone={refresh} />
+                </div>
               </div>
             ))}
             {data?.pending.topups.map((t) => (
               <div key={t.id} className="rounded-xl border border-line p-4">
                 <ActionPanel path={`/actions/approve-topup/${t.id}`} onDone={refresh} />
+                <div className="mt-2">
+                  <RejectButton id={t.id} onDone={refresh} />
+                </div>
               </div>
             ))}
           </div>

@@ -3,13 +3,14 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { generateKeyPairSigner } from "@solana/kit";
-import { callTool, finish, ScriptedProvider } from "@syndromi/runtime";
+import { call, callTool, finish, ScriptedProvider, useTools } from "@syndromi/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { createContext } from "./context.js";
 import { Store } from "./db.js";
 import { HostedRuntime } from "./hosted.js";
 import { createHostedAgent } from "./owner.js";
+import { reject } from "./records.js";
 
 const ATTACKER = "AhLo5HbFDsWtnC4EjkUqmyUPHNpYy4sxTVtH1Tz8MMPS";
 let runtime: HostedRuntime | undefined;
@@ -143,5 +144,60 @@ describe("server-held external agent", () => {
     await runtime.runAndWait("guided-tour");
     expect(provider.received).toHaveLength(1);
     expect(await runs()).toBe(1);
+  }, 60_000);
+
+  it("a scripted run waits for the owner's answer and carries it back to the script", async () => {
+    const ctx = createContext(new Store(":memory:"), {
+      publicUrl: "http://localhost:8787",
+      token: "t",
+      env: {
+        SYNDROMI_HOSTED_SECRET: "a-test-secret-that-is-at-least-32-chars",
+        SYNDROMI_OWNER_WAIT_MS: "400",
+      },
+      draftTtlMs: 60_000,
+      topUpTtlMs: 60_000,
+      dashboardOrigins: [],
+    });
+    const { parseManifest } = await import("@syndromi/core");
+    const parsed = parseManifest(
+      await readFile(
+        join(import.meta.dirname, "../../../templates/guided-tour/manifest.yaml"),
+        "utf8",
+      ),
+    );
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed));
+    const owner = (await generateKeyPairSigner()).address;
+    const created = await createHostedAgent(ctx, {
+      manifest: parsed.manifest,
+      prompt: "",
+      owner,
+      cluster: "devnet",
+    });
+    if (!created.ok) throw new Error(JSON.stringify(created.error));
+
+    const ask = () => useTools(call("request-topup", { amount: 5, reason: "more budget please" }));
+    const provider = new ScriptedProvider([ask(), ask(), finish("Done.")]);
+    runtime = new HostedRuntime(ctx, { schedule: false, providerFor: () => provider });
+    runtime.scan();
+    const running = runtime.runAndWait("guided-tour");
+
+    // The run is parked on its first request until the owner answers it.
+    const pending = async () => {
+      for (let i = 0; i < 100; i++) {
+        const [open] = await ctx.store.topUps({ agentName: "guided-tour", status: "pending" });
+        if (open) return open;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      throw new Error("no top-up request appeared");
+    };
+    const first = await pending();
+    expect(provider.received[0]?.inputs).toHaveLength(1);
+    await reject(ctx, "topup", first.id);
+    // The second request is never answered: the run stops waiting after the limit.
+    await running;
+    const results = provider.received[0]?.inputs.slice(1).map((i) => JSON.stringify(i)) ?? [];
+    expect(results[0]).toMatch(/rejected.*The owner rejected it/);
+    expect(results[1]).toMatch(/timeout.*has not answered yet/);
+    expect(await ctx.store.topUps({ agentName: "guided-tour", status: "pending" })).toHaveLength(1);
   }, 60_000);
 });

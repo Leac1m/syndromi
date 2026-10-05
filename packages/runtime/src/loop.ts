@@ -28,8 +28,31 @@ export type RunOptions = {
   approvals: ApprovalGateway;
   send: (signed: Transaction) => Promise<Signature>;
   maxSteps?: number;
+  /**
+   * Interactive runs: when an action is held for the owner (an approval request or a top-up),
+   * wait here for what they decide instead of moving on, and tell the model the outcome. Without
+   * it the run continues and the request is settled later by the approval watcher.
+   */
+  awaitOwner?: (request: { kind: "draft" | "topup"; id: string }) => Promise<OwnerOutcome>;
   /** The user turn that starts the run; defaults to "run your scheduled task". */
   task?: string;
+};
+
+/** How a held request ended: what the owner decided and, if approved, what then happened. */
+export type OwnerOutcome = {
+  status: "executed" | "pulled" | "rejected" | "expired" | "failed" | "stale" | "timeout";
+  signature?: string;
+  error?: string;
+};
+
+const OUTCOME_NOTES: Record<OwnerOutcome["status"], string> = {
+  executed: "The owner approved it and it was executed.",
+  pulled: "The owner approved the top-up and it is now in your wallet.",
+  rejected: "The owner rejected it. This is final; do not ask again in another form.",
+  expired: "The owner did not answer in time and the request expired.",
+  failed: "The owner approved it, but executing it failed.",
+  stale: "The owner approved it, but the price moved too far since, so it was not executed.",
+  timeout: "The owner has not answered yet. The request stays open; stop waiting for it.",
 };
 
 export type RunSummary = {
@@ -111,7 +134,7 @@ export async function runOnce(opts: RunOptions): Promise<RunSummary> {
 /** What a single tool call needs: no model, so an MCP client can drive the same path. */
 export type ToolCallOptions = Pick<
   RunOptions,
-  "tools" | "signer" | "ctx" | "log" | "approvals" | "send"
+  "tools" | "signer" | "ctx" | "log" | "approvals" | "send" | "awaitOwner"
 >;
 
 /**
@@ -152,6 +175,14 @@ export async function callTool(
       amount: outcome.request.amount,
       reason: outcome.request.reason,
     });
+    if (opts.awaitOwner) {
+      const outcome = await opts.awaitOwner({ kind: "topup", id: request.id });
+      return frame(call.name, {
+        ...outcome,
+        requestId: request.id,
+        note: OUTCOME_NOTES[outcome.status],
+      });
+    }
     return frame(call.name, {
       status: "requested",
       requestId: request.id,
@@ -206,6 +237,15 @@ export async function callTool(
       summary: outcome.summary,
       usd: decision.usd,
     });
+    if (opts.awaitOwner) {
+      const outcome = await opts.awaitOwner({ kind: "draft", id: draft.id });
+      if (outcome.signature) summary.sent.push(outcome.signature as Signature);
+      return frame(call.name, {
+        ...outcome,
+        draftId: draft.id,
+        note: OUTCOME_NOTES[outcome.status],
+      });
+    }
     return frame(call.name, {
       status: "awaiting_owner_approval",
       draftId: draft.id,

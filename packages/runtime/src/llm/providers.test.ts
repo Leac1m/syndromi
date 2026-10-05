@@ -339,6 +339,28 @@ describe("the guided tour (model: script:tour)", () => {
     expect(again.toolCalls.map((c) => c.name)).toEqual(["balances"]);
   });
 
+  it("says what it is about to do, and stops when the owner rejects or does not answer", () => {
+    const steps = tourScript();
+    const turn = (i: number, status?: string) => {
+      const step = steps[i];
+      const results = status
+        ? [{ id: "1", name: "x", content: JSON.stringify({ tool: "x", result: { status } }) }]
+        : [];
+      return typeof step === "function" ? step(results) : step;
+    };
+    expect(steps.slice(0, -1).every((_s, i) => Boolean(turn(i)?.text))).toBe(true);
+    // The move after the held swap, and the end after the top-up, depend on the owner's answer.
+    const afterSwap = steps.findIndex((_s, i) => turn(i)?.toolCalls[0]?.name === "propose-tx");
+    for (const i of [afterSwap, steps.length - 1]) {
+      expect(turn(i, "executed")?.text).not.toMatch(/I stop here/);
+      expect(turn(i, "awaiting_owner_approval")?.text).not.toMatch(/I stop here/);
+      for (const status of ["rejected", "expired", "timeout"]) {
+        expect(turn(i, status)).toMatchObject({ toolCalls: [], stop: "end" });
+        expect(turn(i, status)?.text).toMatch(/I stop here/);
+      }
+    }
+  });
+
   it("only calls tools its template enables", () => {
     const enabled = new Set<string>(template().tools);
     expect(calls().filter((c) => !enabled.has(c.name))).toEqual([]);

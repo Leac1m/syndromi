@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { createContext, type ServerContext } from "./context.js";
 import { Store } from "./db.js";
+import { createTopUp } from "./records.js";
 
 const SECRET = "a-test-secret-that-is-at-least-32-chars";
 let ctx: ServerContext;
@@ -288,6 +289,39 @@ describe("hosted agents: deploy and run now", () => {
       body: { template: "yield-scout", cluster: "devnet", manifest: t.manifest },
     });
     expect(again.status).toBe(200);
+  });
+});
+
+describe("rejecting a held request from the dashboard", () => {
+  it("lets only the owner say no, once, with no signature", async () => {
+    const token = ((await (await signInAs(alice)).res.json()) as { token: string }).token;
+    const bobToken = ((await (await signInAs(bob)).res.json()) as { token: string }).token;
+    await ctx.store.upsertAgent({
+      name: "night-owl",
+      address: bob.address,
+      owner: alice.address,
+      cluster: "devnet",
+      allowanceMint: "8wvXYteqfNieCn4RVC8rnDSGgugHkMbPT4x8KnMeneVd" as Address,
+      rules: { maxTxUsd: 10, approveAboveUsd: 5, destinations: ["self"], programs: ["orca"] },
+      registeredAt: new Date().toISOString(),
+      runtime: "hosted",
+    });
+    const topup = await createTopUp(ctx, {
+      agentName: "night-owl",
+      mint: "8wvXYteqfNieCn4RVC8rnDSGgugHkMbPT4x8KnMeneVd" as Address,
+      amount: 5_000_000n,
+      reason: "more budget please",
+    });
+    const say = (who: string, id = topup.id) =>
+      req(`/owner/requests/${id}/reject`, { token: who, body: {} });
+
+    expect((await say(bobToken)).status).toBe(404);
+    expect((await ctx.store.topUp(topup.id))?.status).toBe("pending");
+    expect((await say(token, "x_nope")).status).toBe(404);
+
+    const rejected = await say(token);
+    expect(await rejected.json()).toEqual({ id: topup.id, status: "rejected" });
+    expect((await say(token)).status).toBe(409);
   });
 });
 

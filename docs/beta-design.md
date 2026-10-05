@@ -297,6 +297,32 @@ A new owner sees the rules work before connecting anything: no AI, no key, no in
   `SYNDROMI_DEVNET_E2E=1 pnpm test packages/runtime/src/devnet.test.ts` repeats the run itself.
   The card was built and type-checked but not yet looked at in a browser.
 
+### The guided run, step by step (Oct 5, after first use)
+
+The first version ran all its moves in a second and left two requests behind. That did not feel
+like an agent at work, and the card only listed what would happen. Changed:
+
+- **One move at a time.** The scripted model pauses 2.5 s before each turn after the first
+  (`SYNDROMI_TOUR_PACE_MS`) and says what it is about to do; the card shows that line.
+- **It waits for the owner.** `runOnce` takes an optional `awaitOwner`: when an action is held (an
+  approval request or a top-up), the run parks on it and the model is told how it ended
+  (executed, pulled, rejected, expired, failed, stale, or timeout). The hosted runtime passes it
+  for scripted agents only; it polls the store, runs the approval watcher at once when the owner
+  approves, and gives up after ten minutes (`SYNDROMI_OWNER_WAIT_MS`). Real-model agents and the
+  owner's own AI are unchanged: their requests are still settled later by the watcher.
+- **Approve to continue, reject to end.** The tour script reads the result: after a rejection, an
+  expiry or a timeout it stops with a sentence saying so.
+- **Reject from the dashboard.** `POST /owner/requests/:id/reject` (the owner's session, no
+  signature); a Reject button sits under every pending request and in the tour.
+- **The card is the run.** Once the agent is funded, the card lists the five moves and updates
+  from the agent's activity (`tourProgress` in `apps/dashboard/src/lib/tour.ts`): done, waiting
+  for you (with Approve and Reject in place), blocked, declined. Each outcome says what it shows
+  about the rules. It ends with where to go next: activity, the agent's page, Telegram, the kill
+  switch, and connecting your own AI.
+- **Checked for real on devnet** through a local server: the run parked on the 6 USDC swap for as
+  long as it was left, carried on after approval, and ended when the top-up was rejected. The card
+  itself was built and type-checked, not viewed in a browser.
+
 ### Managing agents from Telegram (Beta phase 7, Oct 5)
 
 - **The rule: Telegram can only tighten.** Rejecting, pausing and revoking an AI's access need no

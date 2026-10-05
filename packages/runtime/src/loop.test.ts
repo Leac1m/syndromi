@@ -120,6 +120,34 @@ describe("runOnce", () => {
     expect(sink.events.find((e) => e.type === "draft_created")).toMatchObject({ usd: 15 });
   });
 
+  it("waits for the owner when asked to, and tells the model how it ended", async () => {
+    const { opts, send, provider } = await setup([
+      useTools(call("jupiter-swap", { from: "USDC", to: "JitoSOL", amount: 15 })),
+      useTools(call("request-topup", { amount: 5, reason: "allowance used up" })),
+      finish("Done."),
+    ]);
+    const asked: { kind: string; id: string }[] = [];
+    const summary = await runOnce({
+      ...opts,
+      awaitOwner: async (request) => {
+        asked.push(request);
+        return request.kind === "draft"
+          ? { status: "executed", signature: "sigApproved" }
+          : { status: "rejected" };
+      },
+    });
+    // The run itself still sends nothing for a held action: the approval path did.
+    expect(send).not.toHaveBeenCalled();
+    expect(asked.map((a) => a.kind)).toEqual(["draft", "topup"]);
+    expect(asked[0]?.id).toBe(summary.drafts[0]);
+    expect(summary.sent).toEqual(["sigApproved"]);
+    const [afterSwap, afterTopUp] = (provider.received[0]?.inputs ?? [])
+      .slice(1)
+      .map((i) => JSON.stringify(i));
+    expect(afterSwap).toMatch(/executed.*sigApproved.*The owner approved it and it was executed/);
+    expect(afterTopUp).toMatch(/rejected.*This is final/);
+  });
+
   it("blocks the prompt-injection transfer: logged BLOCKED, nothing signed or sent", async () => {
     // A read tool returns the malicious fixture; a compromised model obeys it.
     const poisoned = defineTool({

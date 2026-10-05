@@ -11,7 +11,14 @@ export class ScriptedProvider implements LlmProvider {
   /** Everything the loop sent, for assertions. */
   readonly received: { system: string; tools: string[]; inputs: unknown[] }[] = [];
 
-  constructor(private readonly steps: readonly ScriptStep[]) {}
+  /**
+   * `paceMs`: wait this long before every turn after the first, so a person watching a scripted
+   * run sees one move at a time instead of all of them at once.
+   */
+  constructor(
+    private readonly steps: readonly ScriptStep[],
+    private readonly opts: { paceMs?: number } = {},
+  ) {}
 
   start(system: string, tools: ToolDescriptor[]): Conversation {
     let i = 0;
@@ -20,6 +27,7 @@ export class ScriptedProvider implements LlmProvider {
     return {
       send: async (input) => {
         log.inputs.push(input);
+        if (i > 0 && this.opts.paceMs) await new Promise((r) => setTimeout(r, this.opts.paceMs));
         const step = this.steps[i++];
         if (!step) return { text: "(script finished)", toolCalls: [], stop: "end" };
         return typeof step === "function"
@@ -37,6 +45,12 @@ export const call = (name: string, input: unknown = {}) => ({
   input,
 });
 export const useTools = (...calls: ReturnType<typeof call>[]): Turn => ({
+  toolCalls: calls,
+  stop: "tool_calls",
+});
+/** A tool call with a line of narration, as a model that thinks aloud would produce. */
+export const say = (text: string, ...calls: ReturnType<typeof call>[]): Turn => ({
+  text,
   toolCalls: calls,
   stop: "tool_calls",
 });

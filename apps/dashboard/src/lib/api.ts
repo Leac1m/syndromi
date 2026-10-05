@@ -207,6 +207,9 @@ export const api = {
     }),
   runNow: (name: string) =>
     call<{ started: boolean }>(`/owner/agents/${encodeURIComponent(name)}/run`, {}),
+  /** Say no to a held request (`d_…` or `t_…`). No signature: it only stops something. */
+  reject: (id: string) =>
+    call<{ id: string; status: string }>(`/owner/requests/${encodeURIComponent(id)}/reject`, {}),
   setPaused: (name: string, paused: boolean) =>
     call<AgentView>(`/owner/agents/${encodeURIComponent(name)}/${paused ? "pause" : "resume"}`, {}),
   removeAgent: (name: string) =>

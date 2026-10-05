@@ -24,6 +24,7 @@ import type { ServerContext } from "./context.js";
 import { type AgentRecord, TokenLimit } from "./db.js";
 import { buildOverview } from "./overview.js";
 import { canPause, setPaused, WHY_NOT_PAUSABLE } from "./pause.js";
+import { RecordError, reject } from "./records.js";
 import { challenge, signIn } from "./sessions.js";
 import { createAgentToken } from "./tokens.js";
 
@@ -196,6 +197,25 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
       return c.json({ error: "hosted runtime is off (set SYNDROMI_HOSTED_SECRET)" }, 503);
     const started = ctx.hosted.runNow(agent.name);
     return c.json({ started });
+  });
+
+  // Say no to a held request (an approval request `d_…` or a top-up `t_…`). Rejecting needs no
+  // signature: it only ever stops something.
+  owner.post("/requests/:id/reject", async (c) => {
+    const id = c.req.param("id") ?? "";
+    const kind = id.startsWith("d_") ? "draft" : id.startsWith("t_") ? "topup" : undefined;
+    const record =
+      kind === "draft" ? await store.draft(id) : kind ? await store.topUp(id) : undefined;
+    if (!kind || !record || record.owner !== c.get("owner")) {
+      return c.json({ error: "no such request" }, 404);
+    }
+    try {
+      const updated = await reject(ctx, kind, id);
+      return c.json({ id, status: updated.status });
+    } catch (e) {
+      if (e instanceof RecordError) return c.json({ error: e.message }, e.status as 404 | 409);
+      throw e;
+    }
   });
 
   // Pause: stop one agent acting without revoking anything. Resume is only here (a signed-in

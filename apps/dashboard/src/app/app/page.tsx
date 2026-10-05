@@ -8,7 +8,7 @@ import { useApp } from "@/components/providers";
 import { RunNow } from "@/components/run-now";
 import { TelegramCard } from "@/components/telegram-card";
 import { Card } from "@/components/ui";
-import { api, type Overview as OverviewData, ServerUnreachable } from "@/lib/api";
+import { api, FAUCET_OFF, type Overview as OverviewData, ServerUnreachable } from "@/lib/api";
 import { periodWord, whereItRuns } from "@/lib/format";
 import { usePoll } from "@/lib/use-poll";
 
@@ -188,6 +188,7 @@ function TestFunds({
   return (
     <div className="mt-3 space-y-2 border-t border-line pt-3 text-sm">
       <p className="text-muted">Devnet uses test tokens. They have no value.</p>
+      {!faucet && <p className="text-warn">{FAUCET_OFF}</p>}
       {faucet && (
         <button
           type="button"

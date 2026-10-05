@@ -85,6 +85,14 @@ export type Template = {
 /** A template that runs a built-in script instead of a model (`model: script:<name>`). */
 export const isScripted = (t: Template) => String(t.manifest.model ?? "").startsWith("script:");
 
+/**
+ * Shown on devnet when the overview carries no `faucet`: the server hands out test tokens only
+ * once its operator has given it the treasury key (SYNDROMI_TREASURY_KEY). It is a setup step
+ * that was missed, not something the tester can fix or did wrong, so the text says so.
+ */
+export const FAUCET_OFF =
+  "Test tokens are not switched on for this server yet: its treasury key is not set. Nothing is wrong on your side.";
+
 /** The guided tour's template, and the name one owner's tour agent gets (names are per server). */
 export const TOUR_TEMPLATE = "guided-tour";
 export const tourAgentName = (owner: string) => `tour-${owner.slice(0, 8).toLowerCase()}`;

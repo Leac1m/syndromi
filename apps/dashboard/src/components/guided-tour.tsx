@@ -5,7 +5,7 @@
 // running it once. Devnet only.
 import Link from "next/link";
 import { type ReactNode, useState } from "react";
-import { api, type Overview, TOUR_TEMPLATE, tourAgentName } from "@/lib/api";
+import { api, FAUCET_OFF, type Overview, TOUR_TEMPLATE, tourAgentName } from "@/lib/api";
 import { ActionPanel } from "./action-panel";
 import { RunNow } from "./run-now";
 import { Card } from "./ui";
@@ -84,7 +84,7 @@ export function GuidedTour({ data, onChange }: { data: Overview; onChange(): voi
               {busy ? "Sending…" : `Get ${data.faucet.amount} test USDC`}
             </button>
           ) : (
-            "This server has no test-token faucet."
+            <span className="text-warn">{FAUCET_OFF}</span>
           )}
         </Step>
         <Step n={3} done={Boolean(tour)} title="Create the tour agent" locked={!hasSol || !hasUsdc}>

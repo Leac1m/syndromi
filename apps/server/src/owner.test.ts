@@ -291,6 +291,72 @@ describe("hosted agents: deploy and run now", () => {
   });
 });
 
+describe("pausing an agent", () => {
+  it("stops a hosted agent's runs until its owner resumes it, and only for agents the server runs", async () => {
+    const token = ((await (await signInAs(alice)).res.json()) as { token: string }).token;
+    ctx.rpc = () => fakeRpc() as never;
+    const templates = (await (await req("/owner/templates", { token })).json()) as {
+      name: string;
+      manifest: Record<string, unknown>;
+    }[];
+    const scout = templates.find((t) => t.name === "yield-scout");
+    await req("/owner/agents", {
+      token,
+      body: { template: "yield-scout", cluster: "devnet", manifest: scout?.manifest },
+    });
+    const started: string[] = [];
+    ctx.hosted = { scan: () => undefined, runNow: (name) => started.push(name) > 0 };
+    const post = (path: string, who = token) => req(path, { token: who, body: {} });
+
+    const paused = await post("/owner/agents/yield-scout/pause");
+    expect(await paused.json()).toMatchObject({ name: "yield-scout", paused: true, changed: true });
+    expect(
+      ((await (await post("/owner/agents/yield-scout/pause")).json()) as { changed: boolean })
+        .changed,
+    ).toBe(false);
+    const run = await post("/owner/agents/yield-scout/run");
+    expect(run.status).toBe(409);
+    expect(await run.json()).toEqual({ error: "yield-scout is paused; resume it first" });
+    expect(started).toEqual([]);
+    const overview = (await (await req("/owner/overview?cluster=devnet", { token })).json()) as {
+      agents: { name: string; paused?: boolean; pausable: boolean }[];
+    };
+    expect(overview.agents).toMatchObject([{ name: "yield-scout", paused: true, pausable: true }]);
+
+    // Someone else's session cannot pause or resume it, or learn that it exists.
+    const bobToken = ((await (await signInAs(bob)).res.json()) as { token: string }).token;
+    expect((await post("/owner/agents/yield-scout/resume", bobToken)).status).toBe(404);
+
+    const resumed = await post("/owner/agents/yield-scout/resume");
+    expect(await resumed.json()).toMatchObject({ changed: true });
+    expect(
+      ((await resumed.json().catch(() => ({}))) as { paused?: boolean }).paused,
+    ).toBeUndefined();
+    expect((await post("/owner/agents/yield-scout/run")).status).toBe(200);
+    expect(started).toEqual(["yield-scout"]);
+    // One line in the feed for each change of state, none for the repeat.
+    const feed = (await ctx.store.activity({ agentNames: ["yield-scout"], limit: 50 })).filter(
+      (e) => e.kind === "pause",
+    );
+    expect(feed.map((e) => e.status).sort()).toEqual(["paused", "resumed"]);
+
+    // An agent that holds its own key is beyond the server's reach.
+    await ctx.store.upsertAgent({
+      name: "on-my-laptop",
+      address: bob.address,
+      owner: alice.address,
+      cluster: "devnet",
+      allowanceMint: "8wvXYteqfNieCn4RVC8rnDSGgugHkMbPT4x8KnMeneVd" as Address,
+      rules: { maxTxUsd: 10, approveAboveUsd: 5, destinations: ["self"], programs: ["jupiter"] },
+      registeredAt: new Date().toISOString(),
+      runtime: "local",
+    });
+    const local = await post("/owner/agents/on-my-laptop/pause");
+    expect(local.status).toBe(409);
+    expect(((await local.json()) as { error: string }).error).toMatch(/holds its own key/);
+  });
+});
+
 describe("the guided tour", () => {
   it("is a hosted agent with a script for a model: no key, no schedule, its own name", async () => {
     const { res } = await signInAs(alice);

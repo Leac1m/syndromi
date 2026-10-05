@@ -14,6 +14,10 @@ export type AgentView = {
   ruleCard: string[];
   funded: boolean;
   demo?: boolean;
+  /** Paused by the owner: it does not run or act until resumed. */
+  paused?: boolean;
+  /** Whether the server holds its key and so can pause it. */
+  pausable?: boolean;
   /** A scripted agent's script, e.g. "tour" for the guided tour. */
   script?: string;
   nextRun?: number | null;
@@ -195,6 +199,8 @@ export const api = {
     }),
   runNow: (name: string) =>
     call<{ started: boolean }>(`/owner/agents/${encodeURIComponent(name)}/run`, {}),
+  setPaused: (name: string, paused: boolean) =>
+    call<AgentView>(`/owner/agents/${encodeURIComponent(name)}/${paused ? "pause" : "resume"}`, {}),
   removeAgent: (name: string) =>
     call<{ removed: string }>(`/owner/agents/${encodeURIComponent(name)}`, undefined, "DELETE"),
   createHosted: (template: string, cluster: Network, manifest: unknown, custody?: "server") =>

@@ -23,6 +23,13 @@ export type AgentRecord = {
    * is on the owner's machine (`syndromi mcp`).
    */
   custody?: "server" | "local";
+  /**
+   * Set by the owner (dashboard or Telegram) to stop an agent acting, without touching its
+   * allowance: a hosted agent skips its runs, and a server-held agent's AI is refused write
+   * calls. What the owner already approved still executes. Only the server enforces this, so it
+   * means nothing for an agent that holds its own key (the kill switch is the onchain stop).
+   */
+  paused?: boolean;
   /** As in the manifest: token symbol (or mint), amount per period, period. */
   allowance?: { mint: string; amount: number; period: "daily" | "weekly" | "monthly" };
   feeBudgetSol?: number;
@@ -383,6 +390,22 @@ export class Store {
          on conflict(name) do update set owner = excluded.owner, data = excluded.data`,
         [agent.name, agent.owner, json(merged)],
       );
+    });
+  }
+
+  /** Pause or resume an agent. `changed` is false when it was already in that state. */
+  setAgentPaused(
+    name: string,
+    paused: boolean,
+  ): Promise<{ agent: AgentRecord; changed: boolean } | undefined> {
+    return this.serialize(`agent:${name}`, async () => {
+      const agent = await this.agent(name);
+      if (!agent) return undefined;
+      if (Boolean(agent.paused) === paused) return { agent, changed: false };
+      const { paused: _was, ...rest } = agent;
+      const next: AgentRecord = paused ? { ...rest, paused: true } : rest;
+      await this.run("update agent_records set data = ? where name = ?", [json(next), name]);
+      return { agent: next, changed: true };
     });
   }
 

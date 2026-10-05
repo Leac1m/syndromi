@@ -297,6 +297,29 @@ A new owner sees the rules work before connecting anything: no AI, no key, no in
   `SYNDROMI_DEVNET_E2E=1 pnpm test packages/runtime/src/devnet.test.ts` repeats the run itself.
   The card was built and type-checked but not yet looked at in a browser.
 
+### Managing agents from Telegram (Beta phase 7, Oct 5)
+
+- **The rule: Telegram can only tighten.** Rejecting, pausing and revoking an AI's access need no
+  signature, so the bot may do them. Approving, resuming and anything that raises a limit happen in
+  the wallet or in the signed-in dashboard. A stolen Telegram account can stop agents; it can never
+  give one more room. No button in the bot loosens anything (a test checks there is no resume).
+- **`/status`:** every agent of the chat's wallets, per network: where it runs, what is left of its
+  allowance and when it resets, how many requests wait, and whether it is paused. **Refresh** edits
+  the message in place; **Pending** sends the waiting requests. It is built from the same
+  `buildOverview` (`apps/server/src/overview.ts`) as the dashboard, so the two cannot disagree.
+- **Agent card** (the **Manage** button): **Pause**, **Revoke AI access** (server-held agents: all
+  of its access tokens), and a link to its dashboard page. Buttons work only for a chat linked to
+  the agent's owner; anyone else is told "Not allowed." and nothing about the agent. A second tap
+  answers "Already paused." and changes nothing.
+- **Pause** (`apps/server/src/pause.ts`) is a `paused` flag on the agent record, enforced by the
+  server: a hosted agent skips its runs (and **Run now** is refused), and a server-held agent's AI
+  gets "the owner has paused this agent" for every write call while reads still work. What the
+  owner already approved still executes. It revokes nothing onchain and means nothing for an agent
+  that holds its own key, which is why those cannot be paused and the bot points at `/kill`.
+  Resume is `POST /owner/agents/:name/resume`, a button on the agent's dashboard page.
+- **Not checked live:** the bot's handlers are tested against a recorded Telegram API, not the
+  real bot, because only one server may hold a bot's updates and the hosted one does.
+
 ### Choosing the domain
 
 | Option | Stable? | Cost | Fit |

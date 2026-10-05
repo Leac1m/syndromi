@@ -80,6 +80,11 @@ export default function Overview() {
                       demo
                     </span>
                   )}
+                  {a.paused && (
+                    <span className="rounded border border-warn px-1.5 py-0.5 text-xs text-warn">
+                      paused
+                    </span>
+                  )}
                   {a.script === "tour" && (
                     <span className="rounded border border-accent px-1.5 py-0.5 text-xs text-accent">
                       guided tour
@@ -97,7 +102,7 @@ export default function Overview() {
                     ? `${a.allowanceLeft.remaining} of ${a.allowanceLeft.limit} ${a.allowance?.mint ?? ""} left this ${a.allowance?.period.replace(/ly$/, "")}`
                     : "Needs funding"}
                 </p>
-                {a.runtime === "hosted" && a.funded && (
+                {a.runtime === "hosted" && a.funded && !a.paused && (
                   <div className="mt-1.5">
                     <RunNow name={a.name} nextRun={a.nextRun ?? null} />
                   </div>

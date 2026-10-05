@@ -87,6 +87,10 @@ export function feedLine(e: ActivityEvent): FeedLine | undefined {
     }
     case "approval": {
       const status = String(e.status);
+      // A pause or resume says it all in its summary.
+      if (e.kind === "pause") {
+        return { ...base, text: String(e.summary), tone: status === "paused" ? "warn" : "good" };
+      }
       const tone: Tone = ["executed", "approved", "pulled", "funded"].includes(status)
         ? "good"
         : ["failed", "stale", "revoked"].includes(status)

@@ -32,10 +32,13 @@ const errorsFor = (yaml: string) => {
 };
 
 describe("parseManifest", () => {
-  it.each(["mcp-agent", "dca-agent", "yield-scout"])("accepts the %s template", (name) => {
-    const result = parseManifest(template(name), `${name}/manifest.yaml`);
-    expect(result.ok ? [] : result.errors).toEqual([]);
-  });
+  it.each(["mcp-agent", "dca-agent", "yield-scout", "guided-tour"])(
+    "accepts the %s template",
+    (name) => {
+      const result = parseManifest(template(name), `${name}/manifest.yaml`);
+      expect(result.ok ? [] : result.errors).toEqual([]);
+    },
+  );
 
   it("accepts the CLAUDE.md example shape and maps it to a policy", () => {
     const result = parseManifest(valid);
@@ -107,7 +110,7 @@ describe("parseManifest", () => {
 
   it("only accepts known model providers", () => {
     expect(errorsFor(valid.replace("byok:anthropic", "gpt-4")).join("\n")).toMatch(
-      /model must be "byok:anthropic" or "openai-compatible:<https url>"/,
+      /model must be "byok:anthropic", "openai-compatible:<https url>" or "script:<tour>"/,
     );
   });
 
@@ -117,6 +120,20 @@ describe("parseManifest", () => {
     expect(parseManifest(`${openai}\nmodel_id: some-model\n`).ok).toBe(true);
     expect(errorsFor(`${valid}\napi_key_env: sk-live-123\n`).join("\n")).toMatch(
       /api_key_env must be an env var name/,
+    );
+  });
+
+  it("accepts a scripted model without a key, schedule or prompt, and only a known script", () => {
+    const scripted = valid
+      .replace(/^model: .*$/m, "model: script:tour")
+      .replace(/^(model_id|api_key_env|schedule|prompt): .*\n/gm, "");
+    const ok = parseManifest(scripted);
+    expect(ok.ok, ok.ok ? "" : ok.errors.join("; ")).toBe(true);
+    expect(errorsFor(scripted.replace("script:tour", "script:anything")).join("\n")).toMatch(
+      /model must be "byok:anthropic", "openai-compatible:<https url>" or "script:<tour>"/,
+    );
+    expect(errorsFor(`${scripted}\napi_key_env: SOME_KEY\n`).join("\n")).toMatch(
+      /api_key_env is not used by a scripted agent/,
     );
   });
 

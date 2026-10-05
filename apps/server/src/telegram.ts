@@ -5,21 +5,45 @@
 // dial.to), so approving always means signing in the wallet; Reject needs no signature and works
 // only for items of a wallet linked to the chat. Telegram rejects "localhost" in button URLs;
 // 127.0.0.1 works.
+// /status shows each agent's budget and lets the owner pause it or cut its AI's access. The bot
+// can only tighten: pausing, rejecting and revoking access need no signature, while approving,
+// resuming and anything that raises a limit happen in the wallet or the signed-in dashboard, so a
+// stolen Telegram account can stop agents but never give one more room.
 // Updates arrive by long polling, or by webhook when TELEGRAM_WEBHOOK_SECRET is set (a hosted
 // server that sleeps is woken by Telegram's request).
-import { explorerTx, tokenByMint, toUiAmount } from "@syndromi/core";
+import { type Cluster, describePeriod, explorerTx, formatTokenAmount } from "@syndromi/core";
 import { Bot, InlineKeyboard, type Transformer, webhookCallback } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import type { Context as HonoContext } from "hono";
 import { blinkUrl } from "./actions/spec.js";
 import type { ServerContext } from "./context.js";
-import { type DraftRecord, StatusChanged, TELEGRAM_CODE_TTL_MS, type TopUpRecord } from "./db.js";
+import {
+  type AgentRecord,
+  type DraftRecord,
+  StatusChanged,
+  TELEGRAM_CODE_TTL_MS,
+  type TopUpRecord,
+} from "./db.js";
+import { buildOverview, type OwnerOverview } from "./overview.js";
+import { canPause, setPaused } from "./pause.js";
 
 /** The pre-multi-owner single-chat settings, migrated on startup. */
 const LEGACY_CHAT = "telegram_chat_id";
 const LEGACY_CODE = "telegram_link_code";
 
 export const WEBHOOK_PATH = "/telegram/webhook";
+
+/** What the bot offers, as Telegram shows it in the command menu. */
+const COMMANDS = [
+  { command: "status", description: "Your agents: budget left and what waits for you" },
+  { command: "pending", description: "Requests waiting for your approval" },
+  { command: "kill", description: "Revoke every allowance (you sign in your wallet)" },
+  { command: "unlink", description: "Stop these messages" },
+];
+const COMMAND_LIST = COMMANDS.map((c) => `/${c.command}`).join(", ");
+
+/** Telegram allows 64 bytes of callback data; an agent with a longer name gets no buttons. */
+const fits = (data: string) => Buffer.byteLength(data) <= 64;
 
 export type Telegram = {
   bot: Bot;
@@ -77,7 +101,8 @@ export async function createTelegram(
       return c.reply(
         `Linked to wallet ${short(owner)}. You'll get approval requests, top-up requests, and ` +
           `BLOCKED alerts for its agents here. Approving always means signing in your wallet.\n\n` +
-          `/pending lists what waits for you, /kill revokes every allowance, /unlink stops these messages.`,
+          `/status shows your agents, /pending lists what waits for you, /kill revokes every ` +
+          `allowance, /unlink stops these messages.`,
       );
     }
     const owners = await store.telegramOwners(chat);
@@ -85,19 +110,197 @@ export async function createTelegram(
     return c.reply(`Already linked (${owners.map(short).join(", ")}). Approvals will arrive here.`);
   });
 
-  bot.command("pending", async (c) => {
-    const owners = await store.telegramOwners(String(c.chat.id));
-    if (!owners.length) return c.reply(welcome());
+  /** Send every request waiting for this chat's wallets; false if there is none. */
+  async function sendPending(chat: string, owners: string[]): Promise<boolean> {
     const [drafts, topups] = await Promise.all([
       store.drafts({ status: "pending" }),
       store.topUps({ status: "pending" }),
     ]);
     const mine = drafts.filter((d) => owners.includes(d.owner));
     const mineTopUps = topups.filter((t) => owners.includes(t.owner));
-    if (!mine.length && !mineTopUps.length) return c.reply("Nothing pending.");
-    const chat = String(c.chat.id);
     for (const d of mine) await sendTo(chat, await draftMessage(d), draftKeyboard(d));
     for (const t of mineTopUps) await sendTo(chat, topUpMessage(t), topUpKeyboard(t));
+    return mine.length + mineTopUps.length > 0;
+  }
+
+  bot.command("pending", async (c) => {
+    const owners = await store.telegramOwners(String(c.chat.id));
+    if (!owners.length) return c.reply(welcome());
+    if (!(await sendPending(String(c.chat.id), owners))) return c.reply("Nothing pending.");
+  });
+
+  bot.callbackQuery("pending", async (c) => {
+    const chat = String(c.chat?.id ?? "");
+    const sent = await sendPending(chat, await store.telegramOwners(chat));
+    return c.answerCallbackQuery(sent ? {} : { text: "Nothing pending." });
+  });
+
+  // ---------------------------------------------------------------- /status and agent controls
+  type AgentView = OwnerOverview["agents"][number];
+
+  /** A dashboard page, as a link Telegram accepts in a button (it rejects "localhost"). */
+  const dashboardLink = (path = "") => {
+    const base = dashboardUrl();
+    return base ? `${base}${path}`.replace("//localhost", "//127.0.0.1") : undefined;
+  };
+  const where = (a: Pick<AgentView, "runtime" | "custody" | "script">) =>
+    a.script === "tour"
+      ? "guided tour"
+      : a.runtime === "hosted"
+        ? "hosted"
+        : a.runtime === "external"
+          ? a.custody === "server"
+            ? "your AI"
+            : "your AI, your key"
+          : "on your machine";
+  const budgetLine = (a: AgentView) => {
+    if (!a.funded || !a.allowanceLeft || !a.allowance) return "Not funded yet";
+    const { remaining, limit, periodEndsAt } = a.allowanceLeft;
+    const resets = periodEndsAt ? `, resets in ${inWords(periodEndsAt - Date.now())}` : "";
+    return `${remaining} of ${limit} ${a.allowance.mint} left this ${describePeriod(a.allowance.period)}${resets}`;
+  };
+  const agentLines = (a: AgentView) =>
+    `🤖 <b>${esc(a.name)}</b> · ${where(a)}${a.paused ? " · ⏸ paused" : ""}\n` +
+    `   ${esc(budgetLine(a))}${a.pending ? ` · ${a.pending} waiting for you` : ""}`;
+
+  /** Every agent of the chat's wallets, per cluster they have agents on. */
+  async function overviews(owners: string[]) {
+    const out: { owner: string; cluster: Cluster; overview?: OwnerOverview }[] = [];
+    for (const owner of owners) {
+      const clusters = [...new Set((await store.agents(owner)).map((a) => a.cluster))].sort();
+      for (const cluster of clusters) {
+        const overview = await buildOverview(ctx, owner as AgentRecord["owner"], cluster).catch(
+          () => undefined,
+        );
+        out.push({ owner, cluster, ...(overview ? { overview } : {}) });
+      }
+    }
+    return out;
+  }
+
+  async function statusMessage(owners: string[]) {
+    const all = await overviews(owners);
+    const keyboard = new InlineKeyboard();
+    if (!all.length) {
+      const link = dashboardLink("/agents/new");
+      if (link) keyboard.url("Create an agent", link);
+      return { html: "You have no agents yet. Create one in the dashboard.", keyboard };
+    }
+    let pending = 0;
+    const blocks = all.map(({ owner, cluster, overview }) => {
+      const head = `<b>${esc(cluster)}</b> · wallet ${short(owner)}`;
+      if (!overview) return `${head}\nCould not read this network just now. Try Refresh.`;
+      for (const a of overview.agents) {
+        pending += a.pending;
+        if (fits(`agent:${a.name}`)) keyboard.text(`Manage ${a.name}`, `agent:${a.name}`).row();
+      }
+      return [head, ...overview.agents.map(agentLines)].join("\n");
+    });
+    keyboard.text("↻ Refresh", "status");
+    if (pending) keyboard.text(`Pending (${pending})`, "pending");
+    return { html: blocks.join("\n\n"), keyboard };
+  }
+
+  /** One agent, with the controls the bot may offer: all of them only tighten. */
+  async function agentCard(agent: AgentRecord) {
+    const overview = await buildOverview(ctx, agent.owner, agent.cluster).catch(() => undefined);
+    const view = overview?.agents.find((a) => a.name === agent.name);
+    const keyboard = new InlineKeyboard();
+    const page = dashboardLink(`/agents/${encodeURIComponent(agent.name)}`);
+    if (canPause(agent) && fits(`pause:${agent.name}`)) {
+      if (!agent.paused) keyboard.text("⏸ Pause", `pause:${agent.name}`);
+      else if (page) keyboard.url("Resume in the dashboard", page);
+    }
+    if (agent.custody === "server" && fits(`cut:${agent.name}`)) {
+      keyboard.text("Revoke AI access", `cut:${agent.name}`);
+    }
+    if (page && !agent.paused) keyboard.row().url("Open in the dashboard", page);
+    const html =
+      (view
+        ? agentLines(view)
+        : `🤖 <b>${esc(agent.name)}</b>${agent.paused ? " · ⏸ paused" : ""}\n   Could not read its budget just now.`) +
+      `\n   ${esc(agent.cluster)} · at most $${agent.rules.maxTxUsd} a transaction, your signature above $${agent.rules.approveAboveUsd}` +
+      (canPause(agent)
+        ? ""
+        : "\n   It holds its own key, so it cannot be paused from here; /kill revokes its allowance.");
+    return { html, keyboard };
+  }
+
+  /** The agent a button names, if it belongs to a wallet linked to this chat. */
+  async function ownedAgent(chat: string, name: string): Promise<AgentRecord | undefined> {
+    const agent = await store.agent(name);
+    const owners = await store.telegramOwners(chat);
+    return agent && owners.includes(agent.owner) ? agent : undefined;
+  }
+
+  bot.command("status", async (c) => {
+    const owners = await store.telegramOwners(String(c.chat.id));
+    if (!owners.length) return c.reply(welcome());
+    const { html, keyboard } = await statusMessage(owners);
+    await sendTo(String(c.chat.id), html, keyboard);
+  });
+
+  bot.callbackQuery("status", async (c) => {
+    const owners = await store.telegramOwners(String(c.chat?.id ?? ""));
+    if (!owners.length) return c.answerCallbackQuery({ text: "Not allowed." });
+    const { html, keyboard } = await statusMessage(owners);
+    // Telegram refuses an edit that changes nothing; that just means it was already current.
+    await c
+      .editMessageText(html, {
+        parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
+        reply_markup: keyboard,
+      })
+      .catch(() => undefined);
+    return c.answerCallbackQuery({ text: "Up to date." });
+  });
+
+  bot.callbackQuery(/^agent:(.+)$/, async (c) => {
+    const chat = String(c.chat?.id ?? "");
+    const agent = await ownedAgent(chat, c.match[1] ?? "");
+    // Anyone else is told nothing about the agent, not even that it exists.
+    if (!agent) return c.answerCallbackQuery({ text: "Not allowed." });
+    const { html, keyboard } = await agentCard(agent);
+    await sendTo(chat, html, keyboard);
+    return c.answerCallbackQuery();
+  });
+
+  bot.callbackQuery(/^pause:(.+)$/, async (c) => {
+    const agent = await ownedAgent(String(c.chat?.id ?? ""), c.match[1] ?? "");
+    if (!agent) return c.answerCallbackQuery({ text: "Not allowed." });
+    if (!canPause(agent)) {
+      return c.answerCallbackQuery({ text: "It holds its own key; use /kill instead." });
+    }
+    const result = await setPaused(ctx, agent, true, "Telegram");
+    const { html, keyboard } = await agentCard(result.agent);
+    await c
+      .editMessageText(html, {
+        parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
+        reply_markup: keyboard,
+      })
+      .catch(() => undefined);
+    return c.answerCallbackQuery({
+      text: result.changed ? "Paused. Resume it in the dashboard." : "Already paused.",
+    });
+  });
+
+  bot.callbackQuery(/^cut:(.+)$/, async (c) => {
+    const agent = await ownedAgent(String(c.chat?.id ?? ""), c.match[1] ?? "");
+    if (!agent) return c.answerCallbackQuery({ text: "Not allowed." });
+    const revoked = await store.revokeTokensOf([agent.name]);
+    if (!revoked) return c.answerCallbackQuery({ text: "It has no live access tokens." });
+    await store.addActivity(agent.name, {
+      type: "approval",
+      at: new Date().toISOString(),
+      kind: "token",
+      status: "revoked",
+      summary: `${revoked} access token(s) revoked from Telegram`,
+      cluster: agent.cluster,
+    });
+    return c.answerCallbackQuery({
+      text: `Revoked ${revoked} access token${revoked === 1 ? "" : "s"}. Its AI is cut off.`,
+    });
   });
 
   bot.command("kill", async (c) => {
@@ -155,7 +358,7 @@ export async function createTelegram(
   // Anything else, from a chat that is not linked: point it at the dashboard.
   bot.on("message", async (c) => {
     if (!(await store.telegramOwners(String(c.chat.id))).length) return c.reply(welcome());
-    return c.reply("Commands: /pending, /kill, /unlink.");
+    return c.reply(`Commands: ${COMMAND_LIST}.`);
   });
 
   async function sendTo(chat: string, html: string, keyboard?: InlineKeyboard) {
@@ -256,8 +459,8 @@ export async function createTelegram(
         await notify(
           owner,
           e.left
-            ? `🛑 Kill switch: some delegations revoked on ${esc(String(e.cluster))}; ${e.left} left.`
-            : `🛑 Kill switch: every delegation on ${esc(String(e.cluster))} is revoked. No agent can pull from your bag.`,
+            ? `🛑 Kill switch: some allowances revoked on ${esc(String(e.cluster))}; ${e.left} left.`
+            : `🛑 Kill switch: every allowance and top-up on ${esc(String(e.cluster))} is revoked. No agent can pull from your wallet.`,
         );
         return;
       }
@@ -301,6 +504,8 @@ export async function createTelegram(
     },
     ...(webhook ? { webhook } : {}),
     start: async () => {
+      // The command menu is a convenience: the bot works the same if Telegram refuses it.
+      await bot.api.setMyCommands(COMMANDS).catch(() => undefined);
       if (secretToken) {
         if (!config.publicUrl.startsWith("https://")) {
           throw new Error("Telegram webhooks need an https PUBLIC_URL");
@@ -319,9 +524,15 @@ export async function createTelegram(
   };
 }
 
-function amount(t: TopUpRecord) {
-  const token = tokenByMint(t.mint);
-  return `${toUiAmount(t.amount, token?.decimals ?? 6)} ${token?.symbol ?? "tokens"}`;
+const amount = (t: TopUpRecord) => formatTokenAmount(t.mint, t.amount);
+
+/** A duration as a person would say it: "4d 3h", "2h 10m", "9m". */
+function inWords(ms: number): string {
+  const minutes = Math.max(0, Math.round(ms / 60_000));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  if (days) return `${days}d ${hours}h`;
+  return hours ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
 }
 
 const esc = (s: string) =>

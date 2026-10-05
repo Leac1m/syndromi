@@ -1,6 +1,15 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { parseManifest } from "@syndromi/core";
 import type { ToolDescriptor } from "@syndromi/tools";
 import { describe, expect, it, vi } from "vitest";
-import { createProvider, FailoverProvider, modelOverride } from "./index.js";
+import {
+  createProvider,
+  FailoverProvider,
+  modelOverride,
+  TOUR_STRANGER,
+  tourScript,
+} from "./index.js";
 
 const tools: ToolDescriptor[] = [
   { name: "balances", description: "wallet balances", inputSchema: { type: "object" } },
@@ -306,3 +315,61 @@ for (const p of liveProviders) {
     );
   });
 }
+
+describe("the guided tour (model: script:tour)", () => {
+  const root = new URL("../../../../", import.meta.url).pathname;
+  const template = () => {
+    const parsed = parseManifest(
+      readFileSync(join(root, "templates/guided-tour/manifest.yaml"), "utf8"),
+    );
+    if (!parsed.ok) throw new Error(parsed.errors.join("\n"));
+    return parsed.manifest;
+  };
+  /** Every tool call the script makes, in order. */
+  const calls = () =>
+    tourScript().flatMap((step) => (typeof step === "function" ? step([]) : step).toolCalls);
+
+  it("needs no key: the provider is the script", async () => {
+    const provider = createProvider(template(), {});
+    expect(`${provider.name}:${provider.model}`).toBe("scripted:script");
+    const first = await provider.start("s", []).send({ user: "go" });
+    expect(first.toolCalls.map((c) => c.name)).toEqual(["balances"]);
+    // Each run starts the script again from the top.
+    const again = await provider.start("s", []).send({ user: "go" });
+    expect(again.toolCalls.map((c) => c.name)).toEqual(["balances"]);
+  });
+
+  it("only calls tools its template enables", () => {
+    const enabled = new Set<string>(template().tools);
+    expect(calls().filter((c) => !enabled.has(c.name))).toEqual([]);
+  });
+
+  it("is sized so each step meets the outcome it is there to show", () => {
+    const { allowance, permissions } = template();
+    const amounts = (name: string) =>
+      calls()
+        .filter((c) => c.name === name)
+        .map((c) => (c.input as { amount: number }).amount);
+    const [small, large] = amounts("orca-swap");
+    const [pulled] = amounts("pull-allowance");
+    if (small === undefined || large === undefined || pulled === undefined) {
+      throw new Error("the tour should pull once and swap twice");
+    }
+    // Test USDC is priced at $1, so amounts compare with the USD rules directly.
+    expect(small).toBeLessThanOrEqual(permissions.approve_above_usd); // executes
+    expect(large).toBeGreaterThan(permissions.approve_above_usd); // waits for the owner
+    expect(large).toBeLessThanOrEqual(permissions.max_tx_usd); // …and is not blocked outright
+    expect(pulled).toBeLessThanOrEqual(allowance.amount);
+    expect(pulled).toBeGreaterThanOrEqual(small); // the first swap can be paid for
+  });
+
+  it("tries to pay the injection fixture's attacker, whom no template allows", () => {
+    const fixture = JSON.parse(
+      readFileSync(join(root, "fixtures/injection/pool-description.json"), "utf8"),
+    ) as { attacker: string };
+    expect(TOUR_STRANGER).toBe(fixture.attacker);
+    const transfer = calls().find((c) => c.name === "propose-tx");
+    expect(transfer?.input).toMatchObject({ to: TOUR_STRANGER });
+    expect(template().permissions.destinations).toEqual(["self"]);
+  });
+});

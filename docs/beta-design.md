@@ -1,7 +1,7 @@
 # Beta design: bring your own AI, remote agents, hosting
 
-Status: written Oct 1, 2026. Phase 0 and Phase 2 are built (Oct 2); see "Built: Phase 2" below for what
-differs from the proposal. Phase 1 is partly live (Render + Neon + Vercel) and Phase 3 is open.
+Status: written Oct 1, 2026. Beta phases 0 and 2 are built (Oct 2); see "Built: Beta phase 2" below for what
+differs from the proposal. Beta phase 1 is partly live (Render + Neon + Vercel) and beta phase 3 is open.
 
 The beta runs on Solana devnet. syndromí supplies **no model keys**: the brain is the tester's own.
 This document covers how a tester connects that brain with no install, how we keep it safe, where
@@ -134,7 +134,7 @@ On an external agent's page, a **Connect an AI** card:
 A later, optional **chat panel** lets a tester paste a provider key that stays in their browser and
 run the loop there against `/agent/v1`. It needs `/agent` CORS for the dashboard origins.
 
-## Built: Phase 2 (Oct 2)
+## Built: Beta phase 2 (Oct 2)
 
 Tokens, server-held external agents, `/agent/v1`, `/agent/mcp`, the dashboard **Connect an AI** card and
 tests are in. Where the build differs from, or adds to, the proposal above:
@@ -220,6 +220,122 @@ A free trial of the topology above, before the VPS:
 - **Still limited:** the free instance sleeps after 15 minutes without requests (about a minute to
   wake), and while asleep the Telegram bot, the approval watcher and the expiry sweeper pause. A
   paid instance or the VPS removes that; the data no longer depends on it.
+- **Decided Oct 5: a paid Render instance, not the VPS.** A sleeping server is worst for the path
+  the beta is about: a tester's AI calling `/agent/mcp` hangs for the minute it takes to wake, and
+  the client gives up. The VPS packaging below (Docker, Caddy, DuckDNS) is not being built. Set the
+  service's health check path to `/healthz` (the process is up and the store answers; it returns
+  `{ ok, hosted, telegram }`). The dashboard pings it: until the first answer it shows "Connecting
+  to the server…", which now only happens while a deploy restarts the server, and afterwards a lost
+  connection shows a notice without clearing the page.
+
+### Test tokens and the faucet (Beta phase 4, Oct 5)
+
+Testers no longer need Circle's faucet. syndromí runs its own devnet test tokens:
+
+- **Mints:** test USDC `8wvXYteqfNieCn4RVC8rnDSGgugHkMbPT4x8KnMeneVd` (6 decimals) and test JitoSOL
+  `HHauXVZsFjs1UFCoBJun9dwmCMhbLPVxnmEpxPqRcdpv` (9 decimals): classic SPL Token, no freeze
+  authority, no Token-2022 extensions (the Subscriptions program rejects several). Created by
+  `pnpm beta:setup` (`scripts/beta-setup.ts`), which is safe to run again.
+- **Devnet twins:** they are registered as the `devnet` mints of `USDC` and `JitoSOL`. The policy
+  treats an unpriced token as "needs approval", so a token with no price would turn every action
+  into an approval request; a twin is priced as its mainnet token, and templates and prompts that
+  say `USDC` work on every network. The dashboard says they are test tokens with no value.
+- **Treasury:** `nZ1VHF3Xk6YsbL4cwgqFt1pqhkN1twCKdnbGneuUQMV`, the mint authority. Its key is
+  `SYNDROMI_TREASURY_KEY` on the server (a JSON byte array; locally `~/.syndromi/treasury.json`).
+  Back it up with `SYNDROMI_HOSTED_SECRET`: losing it means new mints and a registry change. It
+  spends a little devnet SOL (fees, and about 0.002 SOL of rent for each new wallet's token
+  account); `/healthz` reports `faucet.low` below 0.05 SOL.
+- **Faucet:** `POST /owner/faucet` (signed-in owner, devnet): 100 test USDC
+  (`SYNDROMI_FAUCET_USDC`) per wallet per day, recorded in `faucet_claims`. A failed mint gives the
+  claim back. The dashboard's wallet card has the button; `syndromi faucet --server <url>` does the
+  same for the CLI's owner wallet, signing in with the owner key (no admin token).
+- **Devnet SOL is the tester's job** (decided Oct 5, to keep this simple): the dashboard links to
+  the public Solana faucet when the wallet is low. That faucet is rate-limited and sometimes fails;
+  if testers get stuck there, a SOL drip is the fix.
+- **Existing devnet agents** funded with Circle's devnet USDC keep their onchain allowance, but the
+  token now shows as a mint address. Revoke and recreate them.
+
+### A pool to swap in (Beta phase 5, Oct 5)
+
+- **Pool:** `HRjoKcD6XQWZhnVFyjp7ViZtAuvLtx4wfvLXb2xfvq3H`, an Orca Splash Pool (full range, 1%
+  fee) for test USDC / test JitoSOL on Orca's devnet deployment, created by `pnpm beta:setup` at
+  the live JitoSOL price with 1,000,000 test USDC and the matching JitoSOL from the treasury. A
+  100 USDC swap moves it by about 0.01%.
+- **Tools:** `orca-quote` and `orca-swap` (devnet only), and an `orca` program permission. The
+  three templates list them next to the Jupiter tools; `jupiter-*` on devnet now answers "use
+  `orca-swap`". Agents created before this need the tools and the permission added to swap.
+- **Keeper:** runs in the server when the treasury key is set; see architecture, decision 4.
+- **Checked for real on devnet:** `SYNDROMI_DEVNET_E2E=1 pnpm test packages/runtime/src/devnet.test.ts`
+  grants an allowance in test USDC, then a scripted run pulls it, swaps 3 USDC (executed), tries 6
+  (held for approval), tries a transfer to a stranger (blocked) and asks for a top-up. It needs the
+  treasury key and sends real devnet transactions, so it is skipped unless asked for.
+
+### The guided run (Beta phase 6, Oct 5)
+
+A new owner sees the rules work before connecting anything: no AI, no key, no install.
+
+- **A scripted model is first class.** `model: script:tour` in a manifest runs a fixed list of
+  tool calls (`tourScript` in `packages/runtime/src/llm/index.ts`) instead of an LLM. It goes
+  through `runOnce` and `callTool` like any agent, so every verdict is the real policy's. Such an
+  agent needs no key, schedule or prompt. This is separate from the `demo.*` switches, which stay
+  for the injection demo only.
+- **The tour** (`templates/guided-tour`, 20 test USDC a week, $5 approval threshold, $10 cap):
+  check balances; pull 10 USDC (executes); quote and swap 3 USDC on the test pool (executes); swap
+  6 USDC (held: above the threshold); send 1 USDC to an address nobody allowed (blocked); ask for
+  a 10 USDC top-up. A test keeps the script's amounts and the template's rules in step.
+- **Dashboard:** the overview shows **Try a guided run** to an owner with no agents (and for as
+  long as their tour agent exists): get devnet SOL, get test USDC, create the tour agent, fund it,
+  run it, then "do it with your own AI" (the wizard). Agent names are unique per server, so each
+  owner's tour agent is `tour-<first 8 characters of their address>`. The wizard does not list the
+  tour template.
+- **Why not instead of a real AI:** the tester's AI was never the obstacle to key safety (we hold
+  no model keys; the tester's AI connects with a per-agent token). The script is there because
+  the first minute should not require setting up an MCP client.
+- **Checked for real on devnet:** through a local server, as the dashboard drives it: create,
+  fund, run (two executed, one held, one blocked, one top-up request), approve the held swap (the
+  server executed it), approve the top-up (the server pulled it).
+  `SYNDROMI_DEVNET_E2E=1 pnpm test packages/runtime/src/devnet.test.ts` repeats the run itself.
+  The card was built and type-checked but not yet looked at in a browser.
+
+### Managing agents from Telegram (Beta phase 7, Oct 5)
+
+- **The rule: Telegram can only tighten.** Rejecting, pausing and revoking an AI's access need no
+  signature, so the bot may do them. Approving, resuming and anything that raises a limit happen in
+  the wallet or in the signed-in dashboard. A stolen Telegram account can stop agents; it can never
+  give one more room. No button in the bot loosens anything (a test checks there is no resume).
+- **`/status`:** every agent of the chat's wallets, per network: where it runs, what is left of its
+  allowance and when it resets, how many requests wait, and whether it is paused. **Refresh** edits
+  the message in place; **Pending** sends the waiting requests. It is built from the same
+  `buildOverview` (`apps/server/src/overview.ts`) as the dashboard, so the two cannot disagree.
+- **Agent card** (the **Manage** button): **Pause**, **Revoke AI access** (server-held agents: all
+  of its access tokens), and a link to its dashboard page. Buttons work only for a chat linked to
+  the agent's owner; anyone else is told "Not allowed." and nothing about the agent. A second tap
+  answers "Already paused." and changes nothing.
+- **Pause** (`apps/server/src/pause.ts`) is a `paused` flag on the agent record, enforced by the
+  server: a hosted agent skips its runs (and **Run now** is refused), and a server-held agent's AI
+  gets "the owner has paused this agent" for every write call while reads still work. What the
+  owner already approved still executes. It revokes nothing onchain and means nothing for an agent
+  that holds its own key, which is why those cannot be paused and the bot points at `/kill`.
+  Resume is `POST /owner/agents/:name/resume`, a button on the agent's dashboard page.
+- **Not checked live:** the bot's handlers are tested against a recorded Telegram API, not the
+  real bot, because only one server may hold a bot's updates and the hosted one does.
+
+### Wording (Beta phase 8, Oct 5)
+
+User-facing text now says "your wallet" (not bag), "approval request" (not draft), "approval link"
+(not Blink), "allowance" and "top-up" (not delegation), "SOL for network fees" (not fee budget), and
+"your AI / hosted / on your machine" where badges showed the manifest's `external / hosted / local`.
+The table is in `CLAUDE.md` ("Words users see"). Code identifiers, API fields (`data.bag`), manifest
+keys and Action paths (`/actions/approve-draft/…`) are unchanged.
+
+- **Covered:** the dashboard and landing page, Telegram messages, the approval page, Action cards
+  and errors, the rule card, tool descriptions and the agent's system prompt, CLI output and help,
+  and the README's user sections.
+- **Deliberately not changed:** the message an owner signs to approve a request still reads
+  "Approve draft …". The server and the runtime parse and verify that text, and a tester's local
+  runtime may be older than the server, so changing it needs a format version, not a reword.
+- **Fixed on the way:** a daily allowance read "left this dai" in the dashboard and "per dai" in the
+  agent's system prompt (a `weekly → week` shortcut applied to every period).
 
 ### Choosing the domain
 
@@ -265,14 +381,14 @@ process and some memory; that is an optional optimisation.
 
 ## Work plan
 
-Phase 0 (done): external agents, `mcp-agent` template, stdio MCP, BYO-AI README section.
+Beta phase 0 (done): external agents, `mcp-agent` template, stdio MCP, BYO-AI README section.
 
-Phase 1: ship a reachable server
+Beta phase 1: ship a reachable server
 1. Dockerfile, compose, Caddyfile, `/healthz`, env template, deploy guide.
 2. DuckDNS name, VPS up, Telegram relinked, Vercel project with the dashboard.
 3. Hide `fork` (flag), set hosted schedules off by default for the beta.
 
-Phase 2: remote agents (the core) — built Oct 2
+Beta phase 2: remote agents (the core) — built Oct 2
 4. Token store: table, hashing, create, list, revoke; owner endpoints; kill switch disables them.
 5. Server-held external agents: `custody` on the record, `HostedRuntime` watcher-only loading,
    wizard option, devnet-only guard.
@@ -282,12 +398,12 @@ Phase 2: remote agents (the core) — built Oct 2
 9. Tests: token lifecycle, policy block over both doors, rate limits, revoke, kill switch, an
    end-to-end MCP client call.
 
-Phase 3: beta polish
+Beta phase 3: beta polish
 10. npm publish of the bundled CLI (yours, when ready); `claudeAddCommand` update.
 11. Real domain, move the two origins.
 12. Optional browser chat panel; framework adapters on `/agent/v1`.
 
-Rough effort: Phase 1 about a day, Phase 2 about two days, Phase 3 as time allows.
+Rough effort: beta phase 1 about a day, beta phase 2 about two days, beta phase 3 as time allows.
 
 ## Decisions needed
 

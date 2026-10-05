@@ -14,6 +14,12 @@ export type AgentView = {
   ruleCard: string[];
   funded: boolean;
   demo?: boolean;
+  /** Paused by the owner: it does not run or act until resumed. */
+  paused?: boolean;
+  /** Whether the server holds its key and so can pause it. */
+  pausable?: boolean;
+  /** A scripted agent's script, e.g. "tour" for the guided tour. */
+  script?: string;
   nextRun?: number | null;
   allowanceLeft?: { remaining: number; limit: number; periodEndsAt?: number };
   topUps: { remaining: number; expiresAt: number }[];
@@ -23,7 +29,9 @@ export type AgentView = {
 export type Overview = {
   owner: string;
   cluster: Network;
-  bag: { usdc: number; sol: number; usdcMint?: string };
+  bag: { usdc: number; sol: number; usdcMint?: string; symbol: string };
+  /** Devnet, when the server runs the test-token faucet: what a claim gives and when the next is due. */
+  faucet?: { amount: number; nextAt: string | null };
   allocatedPerPeriod: Record<string, number>;
   agents: AgentView[];
   pending: {
@@ -74,6 +82,13 @@ export type Template = {
   ruleCard: string[];
 };
 
+/** A template that runs a built-in script instead of a model (`model: script:<name>`). */
+export const isScripted = (t: Template) => String(t.manifest.model ?? "").startsWith("script:");
+
+/** The guided tour's template, and the name one owner's tour agent gets (names are per server). */
+export const TOUR_TEMPLATE = "guided-tour";
+export const tourAgentName = (owner: string) => `tour-${owner.slice(0, 8).toLowerCase()}`;
+
 const KEY = "syndromi.session";
 let session: { token: string; owner: string } | undefined;
 
@@ -95,16 +110,50 @@ export function clearSession() {
   } catch {}
 }
 
+/** The server did not answer at all (restarting, or the network is down): not an HTTP error. */
+export class ServerUnreachable extends Error {
+  constructor() {
+    super("The server is not answering. It may be restarting; this page keeps trying.");
+    this.name = "ServerUnreachable";
+  }
+}
+
+const CALL_TIMEOUT_MS = 30_000;
+const PING_TIMEOUT_MS = 5_000;
+
+/** fetch that turns "no answer" (network error or timeout) into ServerUnreachable. */
+async function reach(path: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  try {
+    return await fetch(`${SERVER}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch {
+    throw new ServerUnreachable();
+  }
+}
+
+/** Whether the server is up and its store answers (GET /healthz). Never throws. */
+export async function pingServer(): Promise<boolean> {
+  try {
+    const res = await reach("/healthz", {}, PING_TIMEOUT_MS);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function call<T>(path: string, body?: unknown, method?: "DELETE"): Promise<T> {
   const token = currentSession()?.token;
-  const res = await fetch(`${SERVER}${path}`, {
-    method: method ?? (body === undefined ? "GET" : "POST"),
-    headers: {
-      "content-type": "application/json",
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
+  const res = await reach(
+    path,
+    {
+      method: method ?? (body === undefined ? "GET" : "POST"),
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
+    CALL_TIMEOUT_MS,
+  );
   const json = (await res.json().catch(() => ({}))) as T & { error?: unknown };
   if (res.status === 401 && path !== "/owner/session") clearSession();
   if (!res.ok) {
@@ -150,6 +199,8 @@ export const api = {
     }),
   runNow: (name: string) =>
     call<{ started: boolean }>(`/owner/agents/${encodeURIComponent(name)}/run`, {}),
+  setPaused: (name: string, paused: boolean) =>
+    call<AgentView>(`/owner/agents/${encodeURIComponent(name)}/${paused ? "pause" : "resume"}`, {}),
   removeAgent: (name: string) =>
     call<{ removed: string }>(`/owner/agents/${encodeURIComponent(name)}`, undefined, "DELETE"),
   createHosted: (template: string, cluster: Network, manifest: unknown, custody?: "server") =>
@@ -172,6 +223,7 @@ export const api = {
       undefined,
       "DELETE",
     ),
+  faucet: () => call<{ amount: number; symbol: string; signature: string }>("/owner/faucet", {}),
   telegram: () => call<{ enabled: boolean; chats: number }>("/owner/telegram"),
   telegramLink: () => call<{ url: string; expiresAt: string }>("/owner/telegram/link", {}),
   telegramDisconnect: () => call<{ unlinked: number }>("/owner/telegram", undefined, "DELETE"),

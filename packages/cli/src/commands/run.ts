@@ -31,7 +31,7 @@ export async function run(
   env: Env,
 ) {
   const { manifest: declared } = await loadAgentDir(dir);
-  if (declared.runtime === "external" || !declared.schedule) {
+  if (declared.runtime === "external") {
     throw new CliError(
       `${declared.name} is an external agent: an MCP client is its brain. Start it with: syndromi mcp ${dir}`,
     );
@@ -42,7 +42,7 @@ export async function run(
   await confirmMainnet(opts.cluster, io, `run agent ${manifest.name}, which may send transactions`);
   if (manifest.runtime === "hosted") {
     io.print(
-      `note: ${manifest.name} is a hosted agent; running it locally (deploy arrives on Day 6)`,
+      `note: ${manifest.name} is a hosted agent; running it locally (\`syndromi deploy\` runs it on the server)`,
     );
   }
 
@@ -53,7 +53,9 @@ export async function run(
     await server.register(session.registration);
     sinks.push(httpSink(server, manifest.name));
     approvals = new HttpApprovalGateway(server, manifest.name);
-    io.print(`server  ${opts.server ?? env.SYNDROMI_SERVER_URL} (drafts go to Telegram)`);
+    io.print(
+      `server  ${opts.server ?? env.SYNDROMI_SERVER_URL} (approval requests go to Telegram)`,
+    );
   }
   const send = (tx: Parameters<typeof sendAndConfirm>[1]) => sendAndConfirm(agent.rpc, tx);
   const provider = createProvider(manifest, env);
@@ -87,7 +89,8 @@ export async function run(
     return result;
   };
 
-  if (opts.once) {
+  // A scripted agent has no schedule: it runs when asked, once.
+  if (opts.once || !cron) {
     await watch(); // anything approved since the last run executes first
     return once();
   }

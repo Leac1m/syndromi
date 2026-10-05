@@ -8,9 +8,9 @@ schedule: "*/15 * * * *"
 allowance: { mint: USDC, amount: 50, period: weekly }
 fee_budget: { sol: 0.02 }
 permissions:
-  programs: [jupiter, subscriptions]
+  programs: [jupiter, orca, subscriptions]
   destinations: [self]
   max_tx_usd: 25
   approve_above_usd: 10
-tools: [pyth-price, yield-data, jupiter-quote, jupiter-swap, balances, pull-allowance, request-topup]
+tools: [pyth-price, yield-data, jupiter-quote, jupiter-swap, orca-quote, orca-swap, balances, pull-allowance, request-topup]
 prompt: ./prompt.md

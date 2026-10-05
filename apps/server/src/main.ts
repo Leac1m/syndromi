@@ -2,6 +2,9 @@
 import { join } from "node:path";
 import { syndromiHome } from "@syndromi/core";
 import { listen } from "./app.js";
+import { faucetAmount } from "./beta/faucet.js";
+import { startKeeper } from "./beta/keeper.js";
+import { loadTreasury, TREASURY_LOW_SOL, treasurySol } from "./beta/treasury.js";
 import { createContext } from "./context.js";
 import { Store } from "./db.js";
 import { HostedRuntime } from "./hosted.js";
@@ -53,6 +56,27 @@ if ((env.SYNDROMI_HOSTED_SECRET ?? "").length >= 32) {
   console.log(`Hosted runtime: on${scheduled ? "" : " (schedules off: Run now only)"}.`);
 } else {
   console.log("Hosted runtime: off (set SYNDROMI_HOSTED_SECRET, 32+ characters).");
+}
+
+try {
+  const treasury = await loadTreasury(env);
+  if (treasury) {
+    ctx.treasury = treasury;
+    const sol = await treasurySol(ctx);
+    console.log(
+      `Test-token faucet: on (${faucetAmount(env)} test USDC per wallet per day; treasury ` +
+        `${treasury.address} holds ${sol ?? "an unknown amount of"} devnet SOL).`,
+    );
+    if (sol !== undefined && sol < TREASURY_LOW_SOL) {
+      console.warn("Treasury is low on devnet SOL: top it up or the faucet will stop working.");
+    }
+    startKeeper(ctx);
+    console.log("Test pool keeper: on (checks the Orca test pool against the live price).");
+  } else {
+    console.log("Test-token faucet: off (SYNDROMI_TREASURY_KEY not set).");
+  }
+} catch (e) {
+  console.error(`Test-token faucet: off, the treasury key is unusable: ${(e as Error).message}`);
 }
 
 if (env.TELEGRAM_BOT_TOKEN) {

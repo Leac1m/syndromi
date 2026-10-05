@@ -14,7 +14,7 @@ export const pullAllowance = defineTool({
   name: "pull-allowance",
   kind: "write",
   description:
-    "Pull part of this period's allowance from the owner's bag into the agent's wallet. " +
+    "Pull part of this period's allowance from the owner's wallet into the agent's wallet. " +
     "Fails if it exceeds what is left this period; then pull less, or ask for a top-up.",
   input: z.object({
     amount: z.number().positive().describe("Amount in whole tokens of the allowance mint"),

@@ -56,7 +56,7 @@ export function mountFundAgent(app: Hono, ctx: ServerContext, icon: string) {
     if (account !== agent.owner) {
       return actionError(
         c,
-        `Only the bag owner (${agent.owner}) can fund ${agent.name}.`,
+        `Only the owner's wallet (${agent.owner}) can fund ${agent.name}.`,
         403,
         agent.cluster,
       );
@@ -71,7 +71,7 @@ export function mountFundAgent(app: Hono, ctx: ServerContext, icon: string) {
           kind: "fund-setup",
           ref: agent.name,
           instructions: setup,
-          message: `Step 1 of 2: let your bag grant allowances in ${symbol(agent.allowanceMint)} (once per token)`,
+          message: `Step 1 of 2: let your wallet grant allowances in ${symbol(agent.allowanceMint)} (once per token)`,
         });
         return actionJson(c, response, agent.cluster);
       }
@@ -126,8 +126,8 @@ export function mountFundAgent(app: Hono, ctx: ServerContext, icon: string) {
   // Setup landed: chain back to this Action for the grant.
   onOwnerTxLanded(ctx, "fund-setup", async (tx) => {
     const agent = await store.agent(tx.ref);
-    if (!agent) return done("Set up", "Your bag can now grant allowances.");
-    return card(agent, "Step 2 of 2: grant the allowance and send the fee budget.");
+    if (!agent) return done("Set up", "Your wallet can now grant allowances.");
+    return card(agent, "Step 2 of 2: grant the allowance and send SOL for network fees.");
   });
   onOwnerTxLanded(ctx, "fund", async (tx) => {
     await ctx.store.addActivity(tx.ref, {

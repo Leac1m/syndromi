@@ -257,6 +257,11 @@ export class HostedRuntime {
     if (a.running || !a.provider) return;
     a.running = true;
     try {
+      // The owner's pause is read fresh each time: it may have been set a moment ago.
+      if ((await this.ctx.store.agent(a.record.name))?.paused) {
+        this.opts.log?.(`hosted: ${a.record.name} is paused; run skipped`);
+        return;
+      }
       await runOnce({
         manifest: a.manifest,
         prompt: a.prompt,

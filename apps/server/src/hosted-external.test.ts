@@ -3,7 +3,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { generateKeyPairSigner } from "@solana/kit";
-import { callTool } from "@syndromi/runtime";
+import { callTool, finish, ScriptedProvider } from "@syndromi/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { createContext } from "./context.js";
@@ -97,5 +97,51 @@ describe("server-held external agent", () => {
     // A name that is not an external server-held agent is not served.
     expect(await runtime.remote("nobody", { via: "http", token: "x" })).toBeUndefined();
     expect((await ctx.store.agent("mcp-agent"))?.custody).toBe("server");
+  }, 60_000);
+
+  it("skips a paused hosted agent's run, and runs it again once resumed", async () => {
+    const ctx = createContext(new Store(":memory:"), {
+      publicUrl: "http://localhost:8787",
+      token: "t",
+      env: { SYNDROMI_HOSTED_SECRET: "a-test-secret-that-is-at-least-32-chars" },
+      draftTtlMs: 60_000,
+      topUpTtlMs: 60_000,
+      dashboardOrigins: [],
+    });
+    const { parseManifest } = await import("@syndromi/core");
+    const parsed = parseManifest(
+      await readFile(
+        join(import.meta.dirname, "../../../templates/guided-tour/manifest.yaml"),
+        "utf8",
+      ),
+    );
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed));
+    const owner = (await generateKeyPairSigner()).address;
+    const created = await createHostedAgent(ctx, {
+      manifest: parsed.manifest,
+      prompt: "",
+      owner,
+      cluster: "devnet",
+    });
+    if (!created.ok) throw new Error(JSON.stringify(created.error));
+
+    // A model that does nothing but finish, so a run needs no chain.
+    const provider = new ScriptedProvider([finish("Nothing to do.")]);
+    runtime = new HostedRuntime(ctx, { schedule: false, providerFor: () => provider });
+    const runs = async () =>
+      (await ctx.store.activity({ agentNames: ["guided-tour"], limit: 50 })).filter(
+        (e) => e.type === "run_start",
+      ).length;
+
+    runtime.scan();
+    await ctx.store.setAgentPaused("guided-tour", true);
+    await runtime.runAndWait("guided-tour");
+    expect(provider.received).toHaveLength(0);
+    expect(await runs()).toBe(0);
+
+    await ctx.store.setAgentPaused("guided-tour", false);
+    await runtime.runAndWait("guided-tour");
+    expect(provider.received).toHaveLength(1);
+    expect(await runs()).toBe(1);
   }, 60_000);
 });

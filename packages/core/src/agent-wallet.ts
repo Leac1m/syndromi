@@ -134,10 +134,16 @@ export async function loadHostedKeypair(
   const variable = hostedKeyVar(name);
   const raw = env[variable]?.trim();
   if (!raw) throw new Error(`${variable} is not set`);
-  const bytes = raw.startsWith("[")
-    ? new Uint8Array(JSON.parse(raw) as number[])
-    : new Uint8Array(getBase58Encoder().encode(raw));
-  if (bytes.length !== 64)
-    throw new Error(`${variable} must decode to 64 bytes, got ${bytes.length}`);
+  const bytes = secretKeyBytes(raw, variable);
   return { signer: await createKeyPairSignerFromBytes(bytes), secretKey: bytes };
+}
+
+/** A 64-byte secret key written as a JSON byte array (the Solana CLI's format) or as base58. */
+export function secretKeyBytes(raw: string, what: string): Uint8Array {
+  const text = raw.trim();
+  const bytes = text.startsWith("[")
+    ? new Uint8Array(JSON.parse(text) as number[])
+    : new Uint8Array(getBase58Encoder().encode(text));
+  if (bytes.length !== 64) throw new Error(`${what} must decode to 64 bytes, got ${bytes.length}`);
+  return bytes;
 }

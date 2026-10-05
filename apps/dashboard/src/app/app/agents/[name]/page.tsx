@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { use } from "react";
+import { use, useState } from "react";
 import { ActionPanel } from "@/components/action-panel";
 import { ActivityFeed } from "@/components/activity-feed";
 import { ConnectAi } from "@/components/connect-ai";
@@ -10,6 +10,7 @@ import { RunNow } from "@/components/run-now";
 import { Card, RuleCard } from "@/components/ui";
 import { api } from "@/lib/api";
 import { short } from "@/lib/config";
+import { whereItRuns } from "@/lib/format";
 import { usePoll } from "@/lib/use-poll";
 
 export default function AgentPage({ params }: { params: Promise<{ name: string }> }) {
@@ -35,7 +36,7 @@ export default function AgentPage({ params }: { params: Promise<{ name: string }
         title={name}
         action={
           <span className="text-sm text-muted">
-            {agent ? `${agent.runtime} · ${short(agent.address)}` : ""}
+            {agent ? `${whereItRuns(agent)} · ${short(agent.address)}` : ""}
           </span>
         }
       >
@@ -44,8 +45,19 @@ export default function AgentPage({ params }: { params: Promise<{ name: string }
             Demo agent: it is deliberately fed a prompt injection to show the policy blocking it.
           </p>
         )}
+        {agent?.paused && (
+          <p className="mb-3 rounded-lg border border-warn px-3 py-2 text-sm text-warn">
+            Paused: it will not run or act until you resume it. Its allowance is untouched, and
+            anything you already approved still goes through.
+          </p>
+        )}
         {agent && <RuleCard lines={agent.ruleCard} />}
-        {agent?.runtime === "hosted" && agent.funded && (
+        {agent?.pausable && (
+          <div className="mt-4">
+            <PauseToggle name={agent.name} paused={Boolean(agent.paused)} onChange={refresh} />
+          </div>
+        )}
+        {agent?.runtime === "hosted" && agent.funded && !agent.paused && (
           <div className="mt-4">
             <RunNow name={agent.name} nextRun={agent.nextRun ?? null} />
           </div>
@@ -93,6 +105,46 @@ export default function AgentPage({ params }: { params: Promise<{ name: string }
           <ActivityFeed agent={name} />
         </Card>
       </div>
+    </div>
+  );
+}
+
+/** Pause stops one agent without revoking anything; resume is only offered here, signed in. */
+function PauseToggle({
+  name,
+  paused,
+  onChange,
+}: {
+  name: string;
+  paused: boolean;
+  onChange(): void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const toggle = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await api.setPaused(name, !paused);
+      onChange();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <button
+        type="button"
+        onClick={() => void toggle()}
+        disabled={busy}
+        className={`rounded-lg border px-3 py-1.5 font-semibold disabled:opacity-50 ${paused ? "border-accent text-accent" : "border-warn text-warn"}`}
+      >
+        {busy ? "…" : paused ? "Resume" : "Pause"}
+      </button>
+      {!paused && <span className="text-muted">Stops it acting; revokes nothing.</span>}
+      {error && <span className="text-bad">{error}</span>}
     </div>
   );
 }

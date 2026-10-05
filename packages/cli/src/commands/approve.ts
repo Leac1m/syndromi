@@ -14,7 +14,7 @@ export async function approve(
   env: Env,
 ) {
   const kind = id.startsWith("d_") ? "draft" : id.startsWith("t_") ? "topup" : undefined;
-  if (!kind) throw new CliError(`"${id}" is not a draft (d_…) or top-up (t_…) id`);
+  if (!kind) throw new CliError(`"${id}" is not an approval request (d_…) or top-up (t_…) id`);
   const { url, client } = requireServer(opts.server, env);
   if (opts.reject) {
     await client.reject(kind, id);

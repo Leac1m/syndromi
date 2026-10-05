@@ -10,12 +10,27 @@ export const TOOL_NAMES = [
   "balances",
   "jupiter-quote",
   "jupiter-swap",
+  "orca-quote",
+  "orca-swap",
   "pull-allowance",
   "request-topup",
   "propose-tx",
   "yield-data",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
+
+/**
+ * Built-in scripted "models": `model: script:<name>` runs a fixed sequence of tool calls instead
+ * of an LLM, through the same policy as any agent. No key, no schedule, no prompt.
+ */
+export const SCRIPT_NAMES = ["tour"] as const;
+export type ScriptName = (typeof SCRIPT_NAMES)[number];
+
+/** The script a manifest's `model` names, if it names one. */
+export function scriptOf(model: string | undefined): ScriptName | undefined {
+  const name = model?.startsWith("script:") ? model.slice("script:".length) : undefined;
+  return SCRIPT_NAMES.find((n) => n === name);
+}
 
 export const PERIODS = { daily: 86_400, weekly: 604_800, monthly: 2_592_000 } as const;
 export type Period = keyof typeof PERIODS;
@@ -41,12 +56,17 @@ export const manifestSchema = z
       ),
     model: z
       .string()
-      .regex(/^(byok:anthropic|openai-compatible:https?:\/\/\S+)$/, {
-        error: 'must be "byok:anthropic" or "openai-compatible:<https url>"',
-      })
+      .regex(
+        new RegExp(
+          `^(byok:anthropic|openai-compatible:https?://\\S+|script:(${SCRIPT_NAMES.join("|")}))$`,
+        ),
+        {
+          error: `must be "byok:anthropic", "openai-compatible:<https url>" or "script:<${SCRIPT_NAMES.join("|")}>"`,
+        },
+      )
       .optional()
       .describe(
-        "Required unless runtime is external. LLM provider: `byok:anthropic` (Anthropic Messages API, your key) or `openai-compatible:<base url>` (any /chat/completions endpoint, e.g. https://integrate.api.nvidia.com/v1).",
+        "Required unless runtime is external. LLM provider: `byok:anthropic` (Anthropic Messages API, your key) or `openai-compatible:<base url>` (any /chat/completions endpoint, e.g. https://integrate.api.nvidia.com/v1). Or `script:tour`: no LLM and no key, a built-in fixed sequence of tool calls (the guided tour) that passes the same policy; it needs no schedule or prompt.",
       ),
     model_id: z
       .string()
@@ -107,7 +127,7 @@ export const manifestSchema = z
           .array(z.enum(PROGRAM_NAMES))
           .min(1)
           .describe(
-            "Programs a transaction may call (compute budget is always allowed): jupiter, token, system, subscriptions.",
+            "Programs a transaction may call (compute budget is always allowed): jupiter, orca (the devnet test pool), token, system, subscriptions.",
           ),
         destinations: z
           .array(destination)
@@ -169,6 +189,11 @@ export const manifestSchema = z
         "fallback_model",
         "schedule",
       ] as const) {
+        if (m[key] !== undefined) ctx.addIssue({ code: "custom", path: [key], message: why });
+      }
+    } else if (scriptOf(m.model)) {
+      const why = "is not used by a scripted agent: there is no model to configure";
+      for (const key of ["model_id", "api_key_env", "fallback_model"] as const) {
         if (m[key] !== undefined) ctx.addIssue({ code: "custom", path: [key], message: why });
       }
     } else {

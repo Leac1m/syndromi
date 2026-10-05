@@ -6,6 +6,7 @@ import type { ProgramName } from "./programs.js";
 const PERIOD_WORD: Record<Period, string> = { daily: "day", weekly: "week", monthly: "month" };
 const PROGRAM_WORD: Record<ProgramName, string> = {
   jupiter: "Jupiter swaps",
+  orca: "swaps on the devnet test pool (Orca)",
   subscriptions: "pulling its allowance",
   token: "token transfers",
   system: "SOL transfers",
@@ -30,7 +31,7 @@ export function ruleCard(m: RuleCardInput): string[] {
   const p = m.permissions;
   const destinations = p.destinations.map((d) => (d === "self" ? "its own wallet" : short(d)));
   const lines = [
-    `${m.name} may take up to ${m.allowance.amount} ${m.allowance.mint} per ${describePeriod(m.allowance.period)} from your bag. The limit is enforced onchain.`,
+    `${m.name} may take up to ${m.allowance.amount} ${m.allowance.mint} per ${describePeriod(m.allowance.period)} from your wallet. The limit is enforced onchain.`,
     `It may only use ${list(p.programs.map((name) => PROGRAM_WORD[name]))}, and funds may only go to ${list(destinations)}.`,
     `No single transaction may move more than ${usd(p.max_tx_usd)}; anything above ${usd(p.approve_above_usd)} waits for your signature.`,
     `You send it ${m.fee_budget.sol} SOL once for network fees.`,

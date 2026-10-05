@@ -1,4 +1,4 @@
-// Day-4 done-when, automated on a Surfpool fork: a yield-scout draft goes to the approvals
+// Phase-4 done-when, automated on a Surfpool fork: a yield-scout draft goes to the approvals
 // server, the owner approves it through the real Actions endpoints (sign-message), and the
 // watcher executes the swap; then a top-up request is approved with a signed transaction and
 // pulled. The model is scripted; Telegram is not involved (covered in apps/server tests).

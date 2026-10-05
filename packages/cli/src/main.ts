@@ -5,6 +5,7 @@ import { redact } from "@syndromi/core";
 import { action } from "./commands/action.js";
 import { approve } from "./commands/approve.js";
 import { deploy } from "./commands/deploy.js";
+import { faucet } from "./commands/faucet.js";
 import { fund } from "./commands/fund.js";
 import { init } from "./commands/init.js";
 import { mcp } from "./commands/mcp.js";
@@ -24,10 +25,11 @@ const HELP = `syndromi <command>
                                           copy a template (default: mcp-agent, a wallet for Claude
                                           or any MCP client) and create the agent's encrypted key;
                                           with a server, register it for funding in the dashboard
-  fund <dir>                              owner: send the fee budget and grant the allowance
+  faucet [--server <url>]                 owner: get devnet test USDC from the server's faucet
+  fund <dir>                              owner: send SOL for network fees and grant the allowance
   run <dir> [--once] [--server <url>] [--max-steps n] [--model [nvidia|gemini|anthropic:]id]
                                           run now (--once) or on the schedule; with a server,
-                                          drafts go to Telegram and approvals are executed
+                                          approval requests go to Telegram, and approved ones execute
   mcp <dir> [--server <url>]              serve the agent's tools over MCP (stdio) so any MCP client
                                           (Claude, Cursor) can act as the agent, under the same policy
   watch <dir> [--once] [--server <url>]   execute owner approvals only (no LLM)
@@ -38,8 +40,8 @@ const HELP = `syndromi <command>
   action <path> [--server <url>]          owner: run a server Action with the CLI key, e.g.
                                           /actions/fund-agent/<name>, "/actions/kill-switch?cluster=devnet"
   request-topup <dir> --amount n --reason "…" [--server <url>]
-  status                                  list the bag's delegations and what is left
-  revoke --all | --agent <name> [--hard]  kill switch: revoke delegations
+  status                                  list the allowances your wallet granted and what is left
+  revoke --all | --agent <name> [--hard]  kill switch: revoke allowances and top-ups
 
 Cluster: devnet by default; --fork for a local Surfpool mainnet fork; --mainnet (asks to confirm).
 Env: SYNDROMI_PASSPHRASE, OWNER_KEYPAIR, SYNDROMI_HOME, RPC_API_KEY, SYNDROMI_SERVER_URL,
@@ -88,6 +90,8 @@ export async function main(argv: string[], io: Io = terminalIo, env: Env = proce
         io,
         env,
       );
+    case "faucet":
+      return faucet({ cluster, ...(values.server ? { server: values.server } : {}) }, io, env);
     case "fund":
       return fund(needTarget(), { cluster }, io, env);
     case "run": {

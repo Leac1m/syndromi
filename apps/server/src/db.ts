@@ -23,10 +23,17 @@ export type AgentRecord = {
    * is on the owner's machine (`syndromi mcp`).
    */
   custody?: "server" | "local";
+  /**
+   * Set by the owner (dashboard or Telegram) to stop an agent acting, without touching its
+   * allowance: a hosted agent skips its runs, and a server-held agent's AI is refused write
+   * calls. What the owner already approved still executes. Only the server enforces this, so it
+   * means nothing for an agent that holds its own key (the kill switch is the onchain stop).
+   */
+  paused?: boolean;
   /** As in the manifest: token symbol (or mint), amount per period, period. */
   allowance?: { mint: string; amount: number; period: "daily" | "weekly" | "monthly" };
   feeBudgetSol?: number;
-  /** Hosted agents: the full manifest and prompt the server runs (Day 6). */
+  /** Hosted agents: the full manifest and prompt the server runs (Phase 6). */
   manifest?: Record<string, unknown>;
   prompt?: string;
 };
@@ -123,6 +130,8 @@ create table if not exists telegram_links (
 create table if not exists telegram_codes (
   code text primary key, owner text not null, created_at text not null,
   used integer not null default 0);
+create table if not exists faucet_claims (
+  id text primary key, owner text not null, at text not null, signature text);
 `;
 
 type Dialect = "sqlite" | "postgres";
@@ -381,6 +390,22 @@ export class Store {
          on conflict(name) do update set owner = excluded.owner, data = excluded.data`,
         [agent.name, agent.owner, json(merged)],
       );
+    });
+  }
+
+  /** Pause or resume an agent. `changed` is false when it was already in that state. */
+  setAgentPaused(
+    name: string,
+    paused: boolean,
+  ): Promise<{ agent: AgentRecord; changed: boolean } | undefined> {
+    return this.serialize(`agent:${name}`, async () => {
+      const agent = await this.agent(name);
+      if (!agent) return undefined;
+      if (Boolean(agent.paused) === paused) return { agent, changed: false };
+      const { paused: _was, ...rest } = agent;
+      const next: AgentRecord = paused ? { ...rest, paused: true } : rest;
+      await this.run("update agent_records set data = ? where name = ?", [json(next), name]);
+      return { agent: next, changed: true };
     });
   }
 
@@ -741,6 +766,57 @@ export class Store {
       [chatId],
     );
     return rows.map((r) => r.owner);
+  }
+
+  // ------------------------------------------------------------------ faucet
+  /**
+   * Take `owner`'s test-token claim for this window: recorded and granted unless they already
+   * hold one from the last `windowMs`. The caller then mints, and either confirms the claim with
+   * the signature or releases it if the mint failed (so a failure does not cost the day).
+   */
+  reserveFaucetClaim(
+    owner: string,
+    windowMs: number,
+    now = new Date(),
+  ): Promise<{ ok: true; id: string } | { ok: false; nextAt: string }> {
+    return this.serialize(`faucet:${owner}`, async () => {
+      const last = await this.get<{ at: string }>(
+        "select at from faucet_claims where owner = ? order by at desc limit 1",
+        [owner],
+      );
+      if (last && now.getTime() - Date.parse(last.at) < windowMs) {
+        return { ok: false, nextAt: new Date(Date.parse(last.at) + windowMs).toISOString() };
+      }
+      const id = crypto.randomUUID();
+      await this.run("insert into faucet_claims (id, owner, at) values (?, ?, ?)", [
+        id,
+        owner,
+        now.toISOString(),
+      ]);
+      return { ok: true, id };
+    });
+  }
+
+  async confirmFaucetClaim(id: string, signature: string) {
+    await this.run("update faucet_claims set signature = ? where id = ?", [signature, id]);
+  }
+
+  async releaseFaucetClaim(id: string) {
+    await this.run("delete from faucet_claims where id = ?", [id]);
+  }
+
+  /** When `owner` may claim again, or undefined if they may now. */
+  async nextFaucetClaim(
+    owner: string,
+    windowMs: number,
+    now = new Date(),
+  ): Promise<string | undefined> {
+    const last = await this.get<{ at: string }>(
+      "select at from faucet_claims where owner = ? order by at desc limit 1",
+      [owner],
+    );
+    if (!last || now.getTime() - Date.parse(last.at) >= windowMs) return undefined;
+    return new Date(Date.parse(last.at) + windowMs).toISOString();
   }
 
   // ------------------------------------------------------------------ settings

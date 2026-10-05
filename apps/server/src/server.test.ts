@@ -21,13 +21,15 @@ import {
   getSetComputeUnitLimitInstruction,
   getSetComputeUnitPriceInstruction,
 } from "@solana-program/compute-budget";
+import { fakeRpc } from "@syndromi/tools/testing";
 import type { Transformer } from "grammy";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { createContext, type ServerContext } from "./context.js";
-import { Store } from "./db.js";
+import { type AgentRecord, Store } from "./db.js";
 import { describeMessage } from "./owner-tx.js";
 import { createTelegram } from "./telegram.js";
+import { createAgentToken } from "./tokens.js";
 
 const TOKEN = "test-token";
 const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" as Address;
@@ -88,6 +90,24 @@ beforeEach(async () => {
     cluster: "fork",
     allowanceMint: USDC,
     rules: { maxTxUsd: 25, approveAboveUsd: 10, destinations: ["self"], programs: ["jupiter"] },
+  });
+});
+
+describe("healthz", () => {
+  it("answers when the store does, for any origin", async () => {
+    const res = await app.request("/healthz", { headers: { origin: "https://elsewhere.example" } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(await res.json()).toEqual({ ok: true, hosted: false, telegram: false });
+  });
+
+  it("is 503 when the store does not answer", async () => {
+    ctx.store.setting = async () => {
+      throw new Error("database is down");
+    };
+    const res = await app.request("/healthz");
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ ok: false });
   });
 });
 
@@ -524,6 +544,121 @@ describe("Telegram", () => {
     await b.press(42, `reject:${id}`);
     expect(b.answers().at(-1)?.payload.text).toBe("Rejected.");
     expect((await ctx.store.draft(id))?.status).toBe("rejected");
+  });
+
+  /** A hosted agent of `owner` on devnet, never funded (the fake chain has no delegations). */
+  const hostedAgent = (name: string, extra: Partial<AgentRecord> = {}): AgentRecord => ({
+    name,
+    address: agent,
+    owner: owner.address,
+    cluster: "devnet",
+    allowanceMint: USDC,
+    rules: { maxTxUsd: 10, approveAboveUsd: 5, destinations: ["self"], programs: ["orca"] },
+    registeredAt: "2026-10-05T00:00:00.000Z",
+    runtime: "hosted",
+    allowance: { mint: "USDC", amount: 20, period: "weekly" },
+    feeBudgetSol: 0.02,
+    ...extra,
+  });
+  const edits = (b: { calls: Call[] }) => b.calls.filter((c) => c.method === "editMessageText");
+
+  it("/status lists each agent with its budget, and Refresh edits the message in place", async () => {
+    ctx.rpc = () => fakeRpc() as never;
+    await ctx.store.upsertAgent(hostedAgent("night-owl"));
+    const b = await makeBot();
+    await b.link(42);
+
+    await b.say(42, "/status");
+    const status = b.sentTo(42).at(-1);
+    const text = String(status?.payload.text);
+    expect(text).toMatch(/<b>devnet<\/b> · wallet /);
+    expect(text).toMatch(/🤖 <b>night-owl<\/b> · hosted\n {3}Not funded yet/);
+    // The agent registered by a local runtime is listed too, on its own network.
+    expect(text).toMatch(/<b>fork<\/b>[\s\S]*<b>yield-scout<\/b> · on your machine/);
+    const buttons = JSON.stringify(status?.payload.reply_markup);
+    expect(buttons).toContain("agent:night-owl");
+    expect(buttons).toContain('"callback_data":"status"');
+
+    await ctx.store.setAgentPaused("night-owl", true);
+    await b.press(42, "status");
+    expect(String(edits(b).at(-1)?.payload.text)).toMatch(/night-owl<\/b> · hosted · ⏸ paused/);
+    expect(b.answers().at(-1)?.payload.text).toBe("Up to date.");
+
+    // A chat that is not linked learns nothing.
+    await b.say(99, "/status");
+    expect(b.sentTo(99).at(-1)?.payload.text).toMatch(/To connect it/);
+    await b.press(99, "status");
+    expect(b.answers().at(-1)?.payload.text).toBe("Not allowed.");
+    await b.press(99, "agent:night-owl");
+    expect(b.answers().at(-1)?.payload.text).toBe("Not allowed.");
+    expect(b.sentTo(99)).toHaveLength(1);
+  });
+
+  it("pauses an agent from its card, once, and never offers to resume it", async () => {
+    ctx.rpc = () => fakeRpc() as never;
+    await ctx.store.upsertAgent(hostedAgent("night-owl"));
+    const b = await makeBot();
+    await b.link(42);
+
+    await b.press(42, "agent:night-owl");
+    const card = b.sentTo(42).at(-1);
+    expect(String(card?.payload.text)).toMatch(
+      /at most \$10 a transaction, your signature above \$5/,
+    );
+    expect(JSON.stringify(card?.payload.reply_markup)).toContain("pause:night-owl");
+
+    // Only a chat linked to the owner's wallet may pause.
+    await b.press(99, "pause:night-owl");
+    expect(b.answers().at(-1)?.payload.text).toBe("Not allowed.");
+    expect((await ctx.store.agent("night-owl"))?.paused).toBeUndefined();
+
+    await b.press(42, "pause:night-owl");
+    expect(b.answers().at(-1)?.payload.text).toBe("Paused. Resume it in the dashboard.");
+    expect((await ctx.store.agent("night-owl"))?.paused).toBe(true);
+    // The card now points at the dashboard to resume; Telegram has no button that loosens.
+    const after = JSON.stringify(edits(b).at(-1)?.payload.reply_markup);
+    expect(after).not.toContain("pause:night-owl");
+    expect(after).toContain("http://127.0.0.1:3000/app/agents/night-owl");
+    expect(JSON.stringify(b.calls)).not.toMatch(/"callback_data":"(resume|unpause)/);
+
+    // A second tap (a slow network) changes nothing and says so.
+    await b.press(42, "pause:night-owl");
+    expect(b.answers().at(-1)?.payload.text).toBe("Already paused.");
+    const feed = (await ctx.store.activity({ agentNames: ["night-owl"], limit: 20 })).filter(
+      (e) => e.kind === "pause",
+    );
+    expect(feed).toHaveLength(1);
+    expect(feed[0]).toMatchObject({ status: "paused", summary: expect.stringMatching(/Telegram/) });
+
+    // An agent that holds its own key cannot be paused by the server.
+    await b.press(42, "pause:yield-scout");
+    expect(b.answers().at(-1)?.payload.text).toMatch(/holds its own key/);
+    expect((await ctx.store.agent("yield-scout"))?.paused).toBeUndefined();
+  });
+
+  it("cuts off a server-held agent's AI by revoking its access tokens", async () => {
+    ctx.rpc = () => fakeRpc() as never;
+    const remote = hostedAgent("my-claude", { runtime: "external", custody: "server" });
+    await ctx.store.upsertAgent(remote);
+    await createAgentToken(ctx, remote, { label: "laptop" });
+    await createAgentToken(ctx, remote, { label: "phone" });
+    const b = await makeBot();
+    await b.link(42);
+
+    await b.press(42, "agent:my-claude");
+    const buttons = JSON.stringify(b.sentTo(42).at(-1)?.payload.reply_markup);
+    expect(buttons).toContain("cut:my-claude");
+    expect(String(b.sentTo(42).at(-1)?.payload.text)).toMatch(/my-claude<\/b> · your AI/);
+
+    await b.press(99, "cut:my-claude");
+    expect(b.answers().at(-1)?.payload.text).toBe("Not allowed.");
+    expect((await ctx.store.tokens("my-claude")).every((t) => !t.revokedAt)).toBe(true);
+
+    await b.press(42, "cut:my-claude");
+    expect(b.answers().at(-1)?.payload.text).toBe("Revoked 2 access tokens. Its AI is cut off.");
+    expect((await ctx.store.tokens("my-claude")).every((t) => t.revokedAt)).toBe(true);
+    await b.press(42, "cut:my-claude");
+    expect(b.answers().at(-1)?.payload.text).toBe("It has no live access tokens.");
   });
 
   it("lets one chat hold several wallets, and /unlink stops the messages", async () => {

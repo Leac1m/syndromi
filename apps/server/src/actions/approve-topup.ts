@@ -47,7 +47,7 @@ export function mountApproveTopUp(app: Hono, ctx: ServerContext, icon: string) {
       title: `${topup.agentName} asks for a top-up`,
       description:
         `${amountText(topup)}, one time, on top of its allowance. Reason: ${topup.reason}\n` +
-        `Signing creates a fixed delegation the agent can pull once within 7 days${fork}.`,
+        `Signing lets the agent pull this amount once, within 7 days${fork}.`,
       label: topup.status === "pending" ? `Approve ${amountText(topup)}` : topup.status,
       disabled: topup.status !== "pending",
       links: {
@@ -65,7 +65,11 @@ export function mountApproveTopUp(app: Hono, ctx: ServerContext, icon: string) {
     if (topup.status !== "pending") return actionError(c, `This request is ${topup.status}.`, 409);
     const { account } = (await c.req.json().catch(() => ({}))) as { account?: string };
     if (account !== topup.owner) {
-      return actionError(c, `Only the bag owner (${topup.owner}) can approve this top-up.`, 403);
+      return actionError(
+        c,
+        `Only the owner's wallet (${topup.owner}) can approve this top-up.`,
+        403,
+      );
     }
     try {
       const built = await grantTopUp(ctx.ownerClient(topup.cluster, topup.owner), {

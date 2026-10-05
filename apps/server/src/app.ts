@@ -1,5 +1,7 @@
 import { serve } from "@hono/node-server";
+import { formatTokenAmount } from "@syndromi/core";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { mountApproveDraft } from "./actions/approve-draft.js";
 import { mountApproveTopUp } from "./actions/approve-topup.js";
 import { mountFundAgent } from "./actions/fund-agent.js";
@@ -8,6 +10,7 @@ import { mountSpec } from "./actions/spec.js";
 import { mountAgentApi } from "./agent-api.js";
 import { mountApi } from "./api.js";
 import { mountApprovePage } from "./approve-page.js";
+import { TREASURY_LOW_SOL, treasurySol } from "./beta/treasury.js";
 import type { ServerContext } from "./context.js";
 import { mountOwner } from "./owner.js";
 import { mountOwnerTx } from "./owner-tx.js";
@@ -31,6 +34,24 @@ export function createApp(ctx: ServerContext) {
     ctx.telegram?.webhook ? await ctx.telegram.webhook(c) : c.text("not found", 404),
   );
   app.get("/", (c) => c.text("syndromi server"));
+  // Liveness for the host's health check and the dashboard's "connecting" state: the process is
+  // up and the store answers. It says nothing an outsider should not know, so any origin may read it.
+  app.get("/healthz", cors({ origin: "*", allowMethods: ["GET"] }), async (c) => {
+    try {
+      await ctx.store.setting("healthz");
+    } catch (e) {
+      console.error("healthz:", (e as Error).message);
+      return c.json({ ok: false }, 503);
+    }
+    const sol = await treasurySol(ctx);
+    return c.json({
+      ok: true,
+      hosted: Boolean(ctx.hosted),
+      telegram: Boolean(ctx.telegram),
+      // Reported so a low treasury is noticed before the faucet stops; its balance is public.
+      ...(ctx.treasury ? { faucet: { sol: sol ?? null, low: (sol ?? 0) < TREASURY_LOW_SOL } } : {}),
+    });
+  });
   return app;
 }
 
@@ -71,7 +92,7 @@ function recordApprovalEvents(ctx: ServerContext) {
         kind: "topup",
         id: t.id,
         status: t.status,
-        summary: `top-up of ${Number(t.amount) / 1e6} USDC: ${t.reason}`,
+        summary: `top-up of ${formatTokenAmount(t.mint, t.amount)}: ${t.reason}`,
         cluster: t.cluster,
         ...(t.resultSignature ? { signature: t.resultSignature } : {}),
       })

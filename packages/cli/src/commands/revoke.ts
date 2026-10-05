@@ -11,7 +11,7 @@ export async function revoke(
   env: Env,
 ) {
   if (!opts.all && !opts.agent) throw new CliError("pass --all, or --agent <name>");
-  await confirmMainnet(opts.cluster, io, "revoke delegations");
+  await confirmMainnet(opts.cluster, io, "revoke allowances and top-ups");
   const owner = await loadOwner(env);
   const client = ownerClient(owner, opts.cluster, env);
   const agent = opts.agent ? (await readAgentConfig(opts.agent, env)).address : undefined;

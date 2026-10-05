@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityEvent } from "./api";
-import { feedLine, runStatus } from "./format";
+import { feedLine, periodWord, runStatus, whereItRuns } from "./format";
 
 const event = (type: string, fields: Record<string, unknown> = {}): ActivityEvent => ({
   seq: 1,
@@ -40,7 +40,7 @@ describe("feedLine", () => {
       feedLine(event("approval", { kind: "draft", status: "executed", summary: "swap 15 USDC" })),
     ).toMatchObject({
       tone: "good",
-      text: "draft executed: swap 15 USDC",
+      text: "approval request executed: swap 15 USDC",
     });
     expect(
       feedLine(event("approval", { kind: "kill", status: "revoked", summary: "all" }))?.text,
@@ -112,5 +112,42 @@ describe("runStatus", () => {
       run: "r2",
       reason: "step limit reached",
     });
+  });
+});
+
+describe("the words an owner reads", () => {
+  it("names where an agent runs without the manifest's terms", () => {
+    expect(whereItRuns({ runtime: "hosted" })).toBe("hosted");
+    expect(whereItRuns({ runtime: "external", custody: "server" })).toBe("your AI");
+    expect(whereItRuns({ runtime: "external" })).toBe("your AI, your key");
+    expect(whereItRuns({ runtime: "local" })).toBe("on your machine");
+  });
+
+  it("says day, week and month for an allowance's period", () => {
+    expect(["daily", "weekly", "monthly", undefined].map(periodWord)).toEqual([
+      "day",
+      "week",
+      "month",
+      "period",
+    ]);
+  });
+
+  it("calls a held action a request waiting for approval, and a pause by its own words", () => {
+    const line = (event: Record<string, unknown>) =>
+      feedLine({
+        seq: 1,
+        agentName: "night-owl",
+        at: "2026-10-05T00:00:00.000Z",
+        ...event,
+      } as never);
+    expect(line({ type: "draft_created", summary: "swap 6 USDC", usd: 6 })?.text).toMatch(
+      /^waiting for your approval: swap 6 USDC/,
+    );
+    expect(
+      line({ type: "approval", kind: "pause", status: "paused", summary: "paused from Telegram" }),
+    ).toMatchObject({ text: "paused from Telegram", tone: "warn" });
+    expect(
+      line({ type: "approval", kind: "topup", status: "pulled", summary: "10 USDC" })?.text,
+    ).toBe("top-up pulled: 10 USDC");
   });
 });

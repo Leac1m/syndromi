@@ -1,0 +1,16 @@
+# The guided tour: a scripted run (no model, no key) that shows what the rules do, on devnet with
+# test tokens. It pulls part of its allowance, makes a small swap that executes, a larger one that
+# waits for you, a transfer to a stranger that is blocked, and asks for a top-up. The script is
+# `tourScript` in packages/runtime/src/llm/index.ts; the amounts below are what make each step
+# land on its outcome, so change them together.
+name: guided-tour
+runtime: hosted
+model: script:tour
+allowance: { mint: USDC, amount: 20, period: weekly }
+fee_budget: { sol: 0.02 }
+permissions:
+  programs: [orca, token, subscriptions]
+  destinations: [self]
+  max_tx_usd: 10
+  approve_above_usd: 5
+tools: [balances, orca-quote, orca-swap, pull-allowance, request-topup, propose-tx]

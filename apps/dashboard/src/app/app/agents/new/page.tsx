@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActionPanel } from "@/components/action-panel";
 import { useApp } from "@/components/providers";
 import { Card, RuleCard } from "@/components/ui";
-import { type AgentView, api, type Template } from "@/lib/api";
+import { type AgentView, api, isScripted, type Template } from "@/lib/api";
 import { SERVER } from "@/lib/config";
 import { usePoll } from "@/lib/use-poll";
 
@@ -27,7 +27,10 @@ export default function NewAgent() {
   useEffect(() => {
     // The server lists the default template (mcp-agent) first; start with it selected.
     api.templates().then(
-      (list) => {
+      (all) => {
+        // The guided tour is a scripted agent with its own card on the overview, not a template
+        // to configure here.
+        const list = all.filter((t) => !isScripted(t));
         setTemplates(list);
         const first = list[0];
         if (first) {

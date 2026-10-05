@@ -198,6 +198,28 @@ describe("the HTTP tool door", () => {
     expect(blocked).toMatchObject({ via: "http", token: secret.slice(0, 8) });
   });
 
+  it("refuses a paused agent's write calls, and still lets its AI read", async () => {
+    await ctx.store.setAgentPaused("mcp-agent", true);
+    const res = await tool("request-topup", { amount: 3, reason: "allowance used up" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      tool: "request-topup",
+      result: { status: "paused", error: expect.stringMatching(/owner has paused this agent/) },
+    });
+    expect((await attack()).status).toBe(200);
+    // Nothing reached a tool, the policy or a signer.
+    expect(events).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+    expect(((await (await call("/agent/v1/me")).json()) as { paused?: boolean }).paused).toBe(true);
+    expect((await tool("balances", {})).status).toBe(200);
+    expect(events.some((e) => e.type === "tool_call" && e.name === "balances")).toBe(true);
+
+    await ctx.store.setAgentPaused("mcp-agent", false);
+    expect(await (await tool("request-topup", { amount: 3, reason: "used up" })).text()).toContain(
+      "requested",
+    );
+  });
+
   it("turns a top-up request into an owner request, not a transaction", async () => {
     const res = await tool("request-topup", { amount: 3, reason: "allowance used up" });
     expect(await res.text()).toContain("requested");
@@ -340,6 +362,18 @@ describe("remote MCP", () => {
     await ctx.store.revokeToken("mcp-agent", tokenId);
     await expect(client.listTools()).rejects.toThrow();
     await client.close().catch(() => undefined);
+  });
+
+  it("refuses a paused agent's write calls over MCP too", async () => {
+    await ctx.store.setAgentPaused("mcp-agent", true);
+    const client = await connect();
+    const refused = await client.callTool({
+      name: "request-topup",
+      arguments: { amount: 3, reason: "allowance used up" },
+    });
+    expect(textOf(refused)).toMatch(/owner has paused this agent/);
+    expect(send).not.toHaveBeenCalled();
+    await client.close();
   });
 
   it("applies the write limit to MCP calls too", async () => {

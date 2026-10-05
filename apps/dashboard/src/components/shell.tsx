@@ -2,20 +2,31 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { short } from "@/lib/config";
+import { NETWORKS, short } from "@/lib/config";
 import { useApp } from "./providers";
+import { ServerGate, useServerStatus } from "./server-gate";
 
 export function Shell({ children }: { children: ReactNode }) {
   const app = useApp();
+  const server = useServerStatus();
   return (
     <div className="mx-auto max-w-5xl px-4 pb-16">
       <header className="flex flex-wrap items-center gap-3 py-5">
-        <Link href="/app" className="mr-auto flex items-center gap-2 text-xl font-bold tracking-tight">
-          <Image src="/icon.png" alt="syndromí logo" width={28} height={32} className="h-7 w-auto" />
+        <Link
+          href="/app"
+          className="mr-auto flex items-center gap-2 text-xl font-bold tracking-tight"
+        >
+          <Image
+            src="/icon.png"
+            alt="syndromí logo"
+            width={28}
+            height={32}
+            className="h-7 w-auto"
+          />
           syndromí
         </Link>
         <div className="flex overflow-hidden rounded-lg border border-line text-sm">
-          {(["devnet", "fork", "mainnet"] as const).map((n) => (
+          {NETWORKS.map((n) => (
             <button
               key={n}
               type="button"
@@ -38,7 +49,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <button
             type="button"
             onClick={() => void app.connect()}
-            disabled={app.connecting}
+            disabled={app.connecting || server.status === "connecting"}
             className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg disabled:opacity-50"
           >
             {app.connecting ? "Connecting…" : "Connect Phantom"}
@@ -61,7 +72,9 @@ export function Shell({ children }: { children: ReactNode }) {
           {app.error}
         </div>
       )}
-      {app.signedIn ? children : <Welcome />}
+      <ServerGate status={server.status} waitedS={server.waitedS}>
+        {app.signedIn ? children : <Welcome />}
+      </ServerGate>
     </div>
   );
 }
@@ -71,9 +84,9 @@ function Welcome() {
     <section className="mt-16 text-center">
       <h1 className="text-3xl font-bold">Budgets for your AI agents</h1>
       <p className="mx-auto mt-3 max-w-xl text-muted">
-        Give each agent an allowance your bag enforces onchain, rules it cannot break, and approvals
-        you sign. Connect the Phantom account that owns your bag, then sign in (a free message, no
-        transaction).
+        Give each agent an allowance that is enforced onchain, rules it cannot break, and approvals
+        you sign. Connect the Phantom account that holds your funds, then sign in (a free message,
+        no transaction).
       </p>
     </section>
   );

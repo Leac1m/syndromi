@@ -2,7 +2,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Address, address, isAddress } from "@solana/kit";
-import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import {
   type Cluster,
   encryptKeypair,
@@ -15,13 +14,16 @@ import {
   networkOf,
   parseManifest,
   ruleCard,
-  toUiAmount,
+  scriptOf,
 } from "@syndromi/core";
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { serialize } from "./api.js";
+import { claimTestTokens } from "./beta/faucet.js";
 import type { ServerContext } from "./context.js";
 import { type AgentRecord, TokenLimit } from "./db.js";
+import { buildOverview } from "./overview.js";
+import { canPause, setPaused, WHY_NOT_PAUSABLE } from "./pause.js";
 import { challenge, signIn } from "./sessions.js";
 import { createAgentToken } from "./tokens.js";
 
@@ -80,95 +82,24 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
     await next();
   });
 
-  owner.get("/overview", async (c) => {
-    const cluster = clusterParam(c.req.query("cluster"));
-    const who = c.get("owner") as Address;
-    const rpc = ctx.rpc(cluster);
-    const usdc = findToken("USDC", networkOf(cluster));
-    const usdcMint = usdc ? mintFor(usdc, networkOf(cluster)) : undefined;
-    const [sol, bag, delegations] = await Promise.all([
-      rpc
-        .getBalance(who)
-        .send()
-        .then((r) => r.value)
-        .catch(() => 0n),
-      usdcMint
-        ? findAssociatedTokenPda({
-            owner: who,
-            mint: usdcMint,
-            tokenProgram: TOKEN_PROGRAM_ADDRESS,
-          })
-            .then(([ata]) => rpc.getTokenAccountBalance(ata).send())
-            .then((r) => BigInt(r.value.amount))
-            .catch(() => 0n)
-        : Promise.resolve(0n),
-      listDelegations(rpc, who).catch(() => []),
-    ]);
-    const [ownAgents, drafts, topups] = await Promise.all([
-      store.agents(who),
-      store.drafts({ status: "pending" }),
-      store.topUps({ status: "pending" }),
-    ]);
-    const agents = ownAgents.filter((a) => a.cluster === cluster);
-    const pendingDrafts = drafts.filter((d) => d.owner === who && d.cluster === cluster);
-    const pendingTopUps = topups.filter((t) => t.owner === who && t.cluster === cluster);
-    const perPeriod: Record<string, number> = {};
-    const view = agents.map((a) => {
-      const own = delegations.filter((d) => d.agent === a.address);
-      const allowance = own.find((d) => d.kind === "allowance");
-      if (allowance && a.allowance) {
-        perPeriod[a.allowance.period] = (perPeriod[a.allowance.period] ?? 0) + a.allowance.amount;
-      }
-      return {
-        ...publicAgent(a),
-        funded: Boolean(allowance),
-        nextRun: a.runtime === "hosted" ? (ctx.hosted?.nextRun?.(a.name)?.getTime() ?? null) : null,
-        allowanceLeft: allowance
-          ? {
-              remaining: toUiAmount(allowance.remaining, 6),
-              limit: toUiAmount(allowance.limit, 6),
-              periodEndsAt: allowance.periodEndsAt
-                ? Number(allowance.periodEndsAt) * 1000
-                : undefined,
-            }
-          : undefined,
-        topUps: own
-          .filter((d) => d.kind === "top-up")
-          .map((d) => ({
-            remaining: toUiAmount(d.remaining, 6),
-            expiresAt: Number(d.expiresAt) * 1000,
-          })),
-        pending:
-          pendingDrafts.filter((d) => d.agentName === a.name).length +
-          pendingTopUps.filter((t) => t.agentName === a.name).length,
-      };
-    });
-    return c.json(
-      serialize({
-        owner: who,
-        cluster,
-        bag: { usdc: toUiAmount(bag, 6), sol: toUiAmount(sol, 9), usdcMint },
-        allocatedPerPeriod: perPeriod,
-        agents: view,
-        pending: {
-          drafts: pendingDrafts.map((d) => ({
-            id: d.id,
-            agentName: d.agentName,
-            summary: d.summary,
-            usd: d.usd,
-            expiresAt: d.expiresAt,
-            reasons: d.decision.reasons,
-          })),
-          topups: pendingTopUps.map((t) => ({
-            id: t.id,
-            agentName: t.agentName,
-            amount: toUiAmount(t.amount, 6),
-            reason: t.reason,
-            expiresAt: t.expiresAt,
-          })),
-        },
-      }),
-    );
+  owner.get("/overview", async (c) =>
+    c.json(
+      serialize(
+        await buildOverview(ctx, c.get("owner") as Address, clusterParam(c.req.query("cluster"))),
+      ),
+    ),
+  );
+
+  // Test tokens for the signed-in wallet, on devnet (one claim a day).
+  owner.post("/faucet", async (c) => {
+    const result = await claimTestTokens(ctx, c.get("owner") as Address);
+    if (!result.ok) {
+      return c.json(
+        { error: result.error, ...(result.nextAt ? { nextAt: result.nextAt } : {}) },
+        result.status,
+      );
+    }
+    return c.json(result);
   });
 
   owner.get("/activity", async (c) => {
@@ -260,11 +191,27 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
       const where = agent.runtime === "external" ? "is driven by an MCP client" : "runs locally";
       return c.json({ error: `${agent.name} ${where}` }, 409);
     }
+    if (agent.paused) return c.json({ error: `${agent.name} is paused; resume it first` }, 409);
     if (!ctx.hosted)
       return c.json({ error: "hosted runtime is off (set SYNDROMI_HOSTED_SECRET)" }, 503);
     const started = ctx.hosted.runNow(agent.name);
     return c.json({ started });
   });
+
+  // Pause: stop one agent acting without revoking anything. Resume is only here (a signed-in
+  // owner), never in Telegram: pausing tightens, resuming loosens.
+  for (const [verb, paused] of [
+    ["pause", true],
+    ["resume", false],
+  ] as const) {
+    owner.post(`/agents/:name/${verb}`, async (c) => {
+      const agent = await store.agent(c.req.param("name"));
+      if (!agent || agent.owner !== c.get("owner")) return c.json({ error: "no such agent" }, 404);
+      if (!canPause(agent)) return c.json({ error: `${agent.name} ${WHY_NOT_PAUSABLE}` }, 409);
+      const result = await setPaused(ctx, agent, paused, "the dashboard");
+      return c.json(serialize({ ...publicAgent(result.agent), changed: result.changed }));
+    });
+  }
 
   // Remove an agent the owner no longer wants. Only when nothing is delegated to it and nothing
   // waits for approval; a hosted key is archived, not deleted (its wallet may hold funds).
@@ -288,7 +235,7 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
       ).length;
     } catch (e) {
       return c.json(
-        { error: `could not check ${agent.name}'s delegations: ${(e as Error).message}` },
+        { error: `could not check ${agent.name}'s allowances: ${(e as Error).message}` },
         502,
       );
     }
@@ -500,6 +447,7 @@ export function publicAgent(a: AgentRecord) {
           },
         })
       : [];
+  const script = scriptOf((a.manifest as { model?: string } | undefined)?.model);
   return {
     name: a.name,
     address: a.address,
@@ -511,8 +459,14 @@ export function publicAgent(a: AgentRecord) {
     rules: a.rules,
     ruleCard: card,
     registeredAt: a.registeredAt,
+    /** Paused by the owner: it does not run or act until resumed (see pause.ts). */
+    ...(a.paused ? { paused: true } : {}),
+    /** Whether the server holds its key and so can pause it. */
+    pausable: canPause(a),
     /** Demo-only agents (the injection demo) are labelled as such in the dashboard. */
     demo: Boolean(a.manifest && (a.manifest as { demo?: unknown }).demo),
+    /** A scripted agent (`model: script:<name>`, e.g. the guided tour) names its script. */
+    ...(script ? { script } : {}),
   };
 }
 

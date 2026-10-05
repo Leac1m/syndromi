@@ -18,6 +18,8 @@ export function resolveToken(
 
 export function assertSwapsAvailable(ctx: Pick<ToolContext, "cluster">) {
   if (ctx.cluster === "devnet") {
-    throw new Error("Jupiter is mainnet-only: swaps need --fork (Surfpool) or --mainnet");
+    throw new Error(
+      "Jupiter is mainnet-only: on devnet use orca-quote and orca-swap (the test pool, USDC and JitoSOL)",
+    );
   }
 }

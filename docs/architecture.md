@@ -1,6 +1,6 @@
 # syndromí architecture
 
-Status: Day-1 decisions (backed by the spikes in `scripts/`), plus the Day-2 core, the Day-3 runtime, the Day-4 approvals, the Day-5 dashboard, the Day-6 hosted mode and the Day-7 hardening. Updated 2026-09-30.
+Status: Phase-1 decisions (backed by the spikes in `scripts/`), plus the Phase-2 core, the Phase-3 runtime, the Phase-4 approvals, the Phase-5 dashboard, the Phase-6 hosted mode and the Phase-7 hardening. Updated 2026-09-30.
 
 ## Components
 
@@ -118,11 +118,48 @@ What this means:
 
 **Recommendation:** keep the **offchain policy signer as the primary gate**. It's required anyway
 for USD caps (Pyth), the approval threshold and drafts, and it produces the BLOCKED feed event
-for the injection demo. Add Swig as a second, onchain layer only if Days 2–3 finish on time;
+for the injection demo. Add Swig as a second, onchain layer only if Phases 2–3 finish on time;
 it's now a proven first stretch item, not a research risk. The pitch line it enables is: "even a
 compromised agent host can only swap via Jupiter, within its cap."
 
-## `packages/core` (Day 2)
+### 4. Devnet swaps: an Orca Splash Pool of our own test tokens (Beta phase 5, spike passed)
+
+Jupiter is mainnet-only, so a devnet agent had nowhere to swap. The beta runs its own pool:
+
+- **Spike** (`pnpm spike:orca`, 7 of 7 on devnet, Oct 5): two classic SPL mints, a Splash Pool on
+  Orca's devnet deployment, full-range liquidity, and two swaps built for an agent that is only a
+  noop signer, assembled by our `buildMessage` and signed by the agent key alone.
+- **Kit versions.** `@orca-so/whirlpools@8.0.1` (and the client, tx-sender and the older program
+  clients it brings) declare a peer on `@solana/kit ^5`; we pin kit 7. Under pnpm they resolve to
+  our kit 7.1.1, and everything above ran on it, so no separate kit 5 package is needed. The peer
+  range is widened in `pnpm-workspace.yaml` for exactly those packages, and the SDK is pinned to
+  the tested version. **Run the spike again before moving that pin.**
+- **What a swap is.** One Whirlpool instruction (757 bytes), preceded by an idempotent
+  associated-token-account creation when the agent has no account for the output token (831
+  bytes). No lookup tables, no wrapped SOL: both tokens are plain SPL mints, which is why the pair
+  is test USDC / test JitoSOL and not SOL.
+- **Splash Pool, not a concentrated range.** One full-range pool per pair. One-directional trading
+  moves its price but can never push it out of range (the `InvalidTickArraySequence` failures a
+  narrow range gives). Pool creation cost about 0.01 SOL of rent; the fee tier is 1%.
+- **Mint order.** Orca orders a pair by the bytes of the mint addresses and prices token A in
+  token B. Pool creation refuses mints in the other order (`orderMints` first), and the liquidity
+  parameter in SDK 8 is `{ tokenMaxA, tokenMaxB }` (the published docs still show `{ tokenA }`).
+- **Policy.** A new `orca` program permission allows the Whirlpool program
+  (`whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc`, the same id on mainnet; a test keeps our
+  constant equal to the SDK's) and the associated-token program, whose instruction the policy
+  already checks for the account's owner. Like the Jupiter instruction, the swap itself is opaque
+  to the policy: its USD value comes from the pool's quote through the tool's `intent`, never from
+  the model. The `orca-*` tools refuse to build anything off devnet.
+- **Where the code is.** Every Orca import is in `packages/tools/src/orca.ts`. The tools are in
+  `packages/tools/src/tools/orca.ts`; `scripts/beta-setup.ts` creates and funds the pool; the
+  server's keeper (`apps/server/src/beta/keeper.ts`) keeps it near the live price.
+- **The keeper.** For a single full-range position the pool is a constant-product pool with
+  reserves L/√P and L·√P, so the input that moves it to a target price is exact up to the fee
+  (`rebalanceTrade`). Every five minutes the treasury compares the pool with the live JitoSOL
+  price and, beyond 2%, mints the token the pool is short of and sells it in, at most a tenth of
+  the reserve per run. With no live price it does nothing.
+
+## `packages/core` (Phase 2)
 
 | Module | What it does |
 |---|---|
@@ -130,8 +167,8 @@ compromised agent host can only swap via Jupiter, within its cap."
 | `bag.ts` | Owner: `ensureSubscriptionAuthority`, `grantAllowance`, `grantTopUp`, `revoke`, `revokeAll({ agent?, hard? })`. Agent: `pullAllowance`, `pullTopUp`. Reads: `listDelegations` with remaining-this-period. Writes return plain instructions (CLI sends them; dashboard hands them to Phantom). |
 | `manifest.ts` | zod schema + `parseManifest` (one readable line per error) + `toPolicy`. |
 | `agent-wallet.ts` | scrypt + AES-256-GCM encrypted keypairs under `~/.syndromi/agents/<name>/`, or `SYNDROMI_AGENT_KEY_<NAME>` for hosted agents. |
-| `prices.ts` | `PriceSource`: keyless Jupiter Price API v3 by default; with `PYTH_API_KEY`, Pyth Hermes first and Jupiter per-request fallback (Day 3). |
-| `send.ts`, `cluster.ts` | `sendAndConfirm` / `signAndSend` (one send path for every cluster, see Day 3), and `devnet \| fork \| mainnet` RPC and explorer helpers. |
+| `prices.ts` | `PriceSource`: keyless Jupiter Price API v3 by default; with `PYTH_API_KEY`, Pyth Hermes first and Jupiter per-request fallback (Phase 3). |
+| `send.ts`, `cluster.ts` | `sendAndConfirm` / `signAndSend` (one send path for every cluster, see Phase 3), and `devnet \| fork \| mainnet` RPC and explorer helpers. |
 | `tokens.ts`, `programs.ts` | Pinned mints (verified) and manifest program names → program IDs. |
 
 Policy checks, in order:
@@ -148,9 +185,9 @@ Policy checks, in order:
 
 Known limits:
 - Value moved *inside* a Jupiter CPI is taken from the tool-built intent (Jupiter's `inAmount`).
-- Simulation-based balance diffs are Day-6 hardening.
+- Simulation-based balance diffs are Phase-6 hardening.
 
-Gotchas found on Day 2:
+Gotchas found on Phase 2:
 - **Subscription Authority first.** `createRecurringDelegation` / `createFixedDelegation` read
   the authority's init id while building the instruction. The authority can't be created in the
   same transaction, so the first grant per (owner, mint) takes two transactions.
@@ -158,10 +195,10 @@ Gotchas found on Day 2:
   deriving PDAs from 1 upward.
 - **Surfpool can't reliably create new mints.** `createMint` hung for about 30 s and failed with
   kit's opaque `Cannot destructure property 'err'` error (likely the same Surfpool remote-fetch
-  stall described under Day 3). Fork tests use mainnet USDC funded by
+  stall described under Phase 3). Fork tests use mainnet USDC funded by
   `surfnet_setTokenAccount`; devnet (`pnpm demo:core`) creates a fresh mint without trouble.
 
-## Runtime, tools and CLI (Day 3)
+## Runtime, tools and CLI (Phase 3)
 
 ```
 manifest.yaml + prompt.md ─► syndromi run ─► runOnce (packages/runtime)
@@ -195,7 +232,7 @@ Loop rules:
   not instructions.
 - Tool output is framed as `{tool, result}` and capped at 4 KB.
 
-**Draft hand-off to Day 4.** A draft stores `{tool, input, intent, decision, summary}`, not a
+**Draft hand-off to Phase 4.** A draft stores `{tool, input, intent, decision, summary}`, not a
 signed transaction, because blockhashes expire in about a minute. On approval, the runtime re-runs
 the tool (for a fresh quote), re-evaluates the policy, and signs with `approvedDraftId` only if
 the verdict is still not `block`. The server implements the same `ApprovalGateway` interface.
@@ -215,7 +252,7 @@ Done-when evidence (Surfpool fork, live Gemini, 2026-09-29):
 - Deterministic versions of the same flows: `packages/runtime/src/loop.test.ts` (scripted model,
   including the injection fixture) and `fork.test.ts` (a real pull and Jupiter swap on the fork).
 
-Gotchas found on Day 3:
+Gotchas found on Phase 3:
 - **Surfpool 1.6 stalls on remote fetches.** While processing a transaction it sometimes waits
   30 s on a remote account fetch (with Helius or the public RPC), then answers with a JSON-RPC
   error kit can't parse (the opaque `Cannot destructure property 'err'`). It's worst when two
@@ -233,7 +270,7 @@ Gotchas found on Day 3:
 - **The Pyth trial key lacks the mSOL feed** (403 "Not entitled"); SOL, USDC and JitoSOL work.
   Such prices come from Jupiter automatically. The trial lapses around Oct 13.
 
-## Approvals: server, Blinks, Telegram (Day 4)
+## Approvals: server, Blinks, Telegram (Phase 4)
 
 ```
 agent run ─ needs_approval ─► POST /api/drafts ─► Telegram: "⏸ yield-scout wants approval"
@@ -272,15 +309,15 @@ Done-when evidence (2026-09-29, Telegram Desktop + Phantom on the same machine):
 - **Top-up:** dca-agent on devnet requested 5 USDC (`t_1aa1fd55`). Phantom signed `grantTopUp`, the server sent it to devnet (`5gkPyx…`, delegation `56FsC9…`), and the watcher pulled it (`376c64…`); the agent now holds 5 devnet USDC. Telegram showed ✅ approved, then ✅ pulled.
 - The automated equivalent is `packages/cli/src/e2e.fork.test.ts`: approve through the Actions endpoints with the owner key, then execute and pull on the fork.
 
-Gotchas found on Day 4:
+Gotchas found on Phase 4:
 - **dial.to was down** (Vercel `DEPLOYMENT_PAUSED`), so the default is our own viewer at `/approve/:id`. It speaks the same Actions endpoints; `BLINK_VIEWER=dialto` switches the links back.
-- **Telegram rejects `localhost` in button URLs** ("Wrong HTTP URL") but accepts `127.0.0.1`, so `PUBLIC_URL` defaults to `http://127.0.0.1:8787`. Approving from a phone needs a public URL (Day 6).
+- **Telegram rejects `localhost` in button URLs** ("Wrong HTTP URL") but accepts `127.0.0.1`, so `PUBLIC_URL` defaults to `http://127.0.0.1:8787`. Approving from a phone needs a public URL (Phase 6).
 - **Phantom ignores the requested chain.** With Testnet mode on Devnet, a Wallet Standard `signAndSendTransaction` with `chain: "solana:devnet"` still simulated on mainnet ("not enough SOL"). Hence sign-only plus the server sending. Phantom's preview may still warn about mainnet fees, which is cosmetic.
 - **Phantom rewrites transactions** by adding `set_compute_unit_price` / `set_compute_unit_limit`. A byte-exact check refused a legitimate signature, so the check is now semantic.
 - **Fork pools go stale.** Surfpool copies an account once and keeps it, while Jupiter quotes live mainnet. That caused Raydium CLMM `TooLittleOutputReceived` (0x1788) and Whirlpool `InvalidTickArraySequence` (0x1787). The swap tool now calls `surfnet_resetAccount` on the route's writable accounts (never the agent's own) so they're re-fetched, and adds a 3% slippage floor on the fork only.
 - **Routes can exceed 64 accounts**, not only 1232 bytes; both trigger the `maxAccounts` step-down.
 
-## Dashboard (Day 5)
+## Dashboard (Phase 5)
 
 `apps/dashboard` uses Next 16, `@phantom/react-sdk` (extension only) and Tailwind 4, on port 3000 by default; `next dev --port 3001` if 3000 is taken. It's a Blink client over the server's Actions plus an owner-scoped read API.
 
@@ -314,7 +351,7 @@ Done-when evidence (2026-09-29, devnet, Phantom and Telegram Desktop):
 
 The feed and Telegram showed every step.
 
-Gotchas found on Day 5:
+Gotchas found on Phase 5:
 - **The Phantom React SDK's `signTransaction` expects web3.js objects.** It goes through Phantom's injected API and calls `.serialize()` ("r.serialize is not a function" with kit transactions). The dashboard signs raw bytes with the Wallet Standard `solana:signTransaction` instead, and uses the SDK for connecting, `signMessage` and `switchNetwork`.
 - **Hydration mismatch** from reading `sessionStorage` during the first render; the session is now read after mount.
 - **The Blink viewer's inline script broke** when a regex lost its backslash inside the page's template string. Tests now compile the inline scripts.
@@ -322,7 +359,7 @@ Gotchas found on Day 5:
 - **Supply chain.** pnpm's `minimumReleaseAge` had been bypassed by auto-added exclusions for hours-old releases (next 16.3.7, hono 4.13.11, @hono/node-server 2.1.3). They're removed and pinned to settled versions (next 16.3.6, hono 4.13.9, @hono/node-server 2.1.1), and the lockfile was rebuilt under the policy.
 - **Port 3000** was used by another local app; `DASHBOARD_ORIGINS` must include the port the dashboard really runs on.
 
-## Hosted mode and the security demo (Day 6)
+## Hosted mode and the security demo (Phase 6)
 
 **Hosted runtime** (`apps/server/src/hosted.ts`). It uses the same `runOnce` and `executeApprovals` as `syndromi run`, inside the server:
 - Each hosted agent's key is decrypted with `SYNDROMI_HOSTED_SECRET` (created by the wizard or by `syndromi deploy`).
@@ -347,12 +384,12 @@ Gotchas found on Day 5:
 
 Rehearsal: see `docs/demo-runbook.md` and PLAN.md (run 1 details, the rough-edges list).
 
-Gotchas found on Day 6:
+Gotchas found on Phase 6:
 - **The NVIDIA endpoint degraded, then stopped answering** (13 s for "hi", then no response in 90 s). Our key reaches only `meta/muse-glimmer-30b`; other catalog models return "Not found for account". The recording needs a backup provider.
 - **Hosted agents that share a name** conflict across clusters: names are global in the store.
 - **Quick tunnels** give a new URL on every run, which means restarting the server with a new `PUBLIC_URL`.
 
-## Hardening (Day 7)
+## Hardening (Phase 7)
 
 **LLM resilience** (`packages/runtime/src/llm`).
 - `anthropic.ts` uses the official `@anthropic-ai/sdk` (0.129.0):

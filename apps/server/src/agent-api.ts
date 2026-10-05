@@ -8,7 +8,7 @@
 // verdict in the body. HTTP errors are only for the protocol: 400 input, 401 token, 403 origin or
 // plain http, 404 tool, 413 size, 429 rate, 503 not ready.
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { listDelegations } from "@syndromi/core";
+import { decimalsOf, listDelegations, toUiAmount } from "@syndromi/core";
 import { buildMcpServer, callTool, type ToolCallOptions } from "@syndromi/runtime";
 import type { Toolset } from "@syndromi/tools";
 import type { Context, Hono } from "hono";
@@ -41,6 +41,10 @@ export const DEFAULT_LIMITS: AgentLimits = {
 };
 
 type Env = { Variables: { agent: AgentRecord; token: TokenRecord } };
+
+/** What a paused agent's AI is told when it tries to act. Reads still work. */
+const PAUSED =
+  "The owner has paused this agent, so nothing was built or sent. Tell the owner; do not retry until they resume it.";
 
 export function mountAgentApi(app: Hono, ctx: ServerContext) {
   const limits = { ...DEFAULT_LIMITS, ...ctx.config.agentLimits };
@@ -83,6 +87,7 @@ export function mountAgentApi(app: Hono, ctx: ServerContext) {
     ...tools,
     call: async (name, input, toolCtx) => {
       const tool = tools.tools.find((t) => t.name === name);
+      if (tool?.kind === "write" && agent.paused) return { type: "error", error: PAUSED };
       if (tool?.kind === "write") {
         const taken = limiter.take(`write:${token.id}`, limits.writesPerMinute);
         if (!taken.ok) {
@@ -174,8 +179,8 @@ export function mountAgentApi(app: Hono, ctx: ServerContext) {
       const own = delegations.find((d) => d.agent === agent.address && d.kind === "allowance");
       if (own) {
         allowanceLeft = {
-          remaining: Number(own.remaining) / 1e6,
-          limit: Number(own.limit) / 1e6,
+          remaining: toUiAmount(own.remaining, decimalsOf(own.mint)),
+          limit: toUiAmount(own.limit, decimalsOf(own.mint)),
           ...(own.periodEndsAt ? { periodEndsAt: Number(own.periodEndsAt) * 1000 } : {}),
         };
       }
@@ -214,6 +219,10 @@ export function mountAgentApi(app: Hono, ctx: ServerContext) {
     }
 
     const agent = c.get("agent");
+    if (tool.kind === "write" && agent.paused) {
+      // Like every other outcome, a refusal is a 200 with the reason in the body.
+      return c.json({ tool: name, result: { status: "paused", error: PAUSED } });
+    }
     if (tool.kind === "write") {
       const taken = limiter.take(`write:${c.get("token").id}`, limits.writesPerMinute);
       if (!taken.ok) return tooMany(c, taken.retryAfter, "too many write calls for this token");

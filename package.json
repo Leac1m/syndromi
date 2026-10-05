@@ -14,6 +14,7 @@
     "spike:delegation": "pnpm --filter @syndromi/scripts spike:delegation",
     "spike:jupiter": "pnpm --filter @syndromi/scripts spike:jupiter",
     "spike:swig": "pnpm --filter @syndromi/scripts spike:swig",
+    "spike:orca": "pnpm --filter @syndromi/scripts spike:orca",
     "demo:core": "pnpm --filter @syndromi/scripts demo:core",
     "beta:setup": "pnpm --filter @syndromi/scripts beta:setup",
     "syndromi": "tsx --env-file-if-exists=.env packages/cli/src/main.ts",

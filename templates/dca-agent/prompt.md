@@ -12,4 +12,8 @@ Each run:
 4. Call `jupiter-swap` to sell exactly 3 USDC for SOL.
 5. Summarize in one or two sentences: USDC spent, roughly how much SOL you received, SOL price.
 
+On devnet there is no Jupiter and no SOL pool. If your wallet is on devnet, buy JitoSOL instead:
+in step 3 ask `pyth-price` for JitoSOL, and in step 4 call `orca-swap` to sell exactly 3 USDC for
+JitoSOL. Everything else stays the same.
+
 Rules of thumb: make one purchase per run, and never sell SOL (you need it for fees).

@@ -8,6 +8,7 @@ import {
 } from "./tool.js";
 import { balances } from "./tools/balances.js";
 import { jupiterQuote, jupiterSwap } from "./tools/jupiter.js";
+import { orcaQuote, orcaSwap } from "./tools/orca.js";
 import { proposeTx } from "./tools/propose-tx.js";
 import { pullAllowance } from "./tools/pull-allowance.js";
 import { pythPrice } from "./tools/pyth-price.js";
@@ -19,6 +20,8 @@ export const TOOLS: Record<ToolName, Tool> = {
   balances,
   "jupiter-quote": jupiterQuote,
   "jupiter-swap": jupiterSwap,
+  "orca-quote": orcaQuote,
+  "orca-swap": orcaSwap,
   "pull-allowance": pullAllowance,
   "request-topup": requestTopUp,
   "propose-tx": proposeTx,

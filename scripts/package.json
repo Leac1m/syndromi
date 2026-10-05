@@ -8,10 +8,12 @@
     "spike:delegation": "tsx --env-file=../.env spike-delegation.ts",
     "spike:jupiter": "tsx --env-file=../.env spike-jupiter.ts",
     "spike:swig": "tsx --env-file=../.env spike-swig.ts",
+    "spike:orca": "tsx --env-file=../.env spike-orca.ts",
     "demo:core": "tsx --env-file=../.env demo-core.ts",
     "beta:setup": "tsx --env-file=../.env beta-setup.ts"
   },
   "dependencies": {
+    "@orca-so/whirlpools": "8.0.1",
     "@solana-program/compute-budget": "^0.17.0",
     "@solana-program/system": "^0.13.0",
     "@solana-program/token": "^0.15.0",

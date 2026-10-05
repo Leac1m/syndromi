@@ -280,7 +280,7 @@ function How() {
         <ul className="grid gap-2 text-muted">
           {[
             "mcp-agent may take up to 5 USDC per week from your bag. The limit is enforced onchain.",
-            "It may only use Jupiter swaps and pulling its allowance, and funds may only go to its own wallet.",
+            "It may only use Jupiter swaps, swaps on the devnet test pool (Orca) and pulling its allowance, and funds may only go to its own wallet.",
             "No single transaction may move more than $10; anything above $5 waits for your signature.",
             "You send it 0.02 SOL once for network fees.",
             "You can revoke it at any time with the kill switch.",

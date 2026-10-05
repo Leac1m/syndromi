@@ -118,9 +118,46 @@ What this means:
 
 **Recommendation:** keep the **offchain policy signer as the primary gate**. It's required anyway
 for USD caps (Pyth), the approval threshold and drafts, and it produces the BLOCKED feed event
-for the injection demo. Add Swig as a second, onchain layer only if Days 2–3 finish on time;
+for the injection demo. Add Swig as a second, onchain layer only if Phases 2–3 finish on time;
 it's now a proven first stretch item, not a research risk. The pitch line it enables is: "even a
 compromised agent host can only swap via Jupiter, within its cap."
+
+### 4. Devnet swaps: an Orca Splash Pool of our own test tokens (Beta phase 5, spike passed)
+
+Jupiter is mainnet-only, so a devnet agent had nowhere to swap. The beta runs its own pool:
+
+- **Spike** (`pnpm spike:orca`, 7 of 7 on devnet, Oct 5): two classic SPL mints, a Splash Pool on
+  Orca's devnet deployment, full-range liquidity, and two swaps built for an agent that is only a
+  noop signer, assembled by our `buildMessage` and signed by the agent key alone.
+- **Kit versions.** `@orca-so/whirlpools@8.0.1` (and the client, tx-sender and the older program
+  clients it brings) declare a peer on `@solana/kit ^5`; we pin kit 7. Under pnpm they resolve to
+  our kit 7.1.1, and everything above ran on it, so no separate kit 5 package is needed. The peer
+  range is widened in `pnpm-workspace.yaml` for exactly those packages, and the SDK is pinned to
+  the tested version. **Run the spike again before moving that pin.**
+- **What a swap is.** One Whirlpool instruction (757 bytes), preceded by an idempotent
+  associated-token-account creation when the agent has no account for the output token (831
+  bytes). No lookup tables, no wrapped SOL: both tokens are plain SPL mints, which is why the pair
+  is test USDC / test JitoSOL and not SOL.
+- **Splash Pool, not a concentrated range.** One full-range pool per pair. One-directional trading
+  moves its price but can never push it out of range (the `InvalidTickArraySequence` failures a
+  narrow range gives). Pool creation cost about 0.01 SOL of rent; the fee tier is 1%.
+- **Mint order.** Orca orders a pair by the bytes of the mint addresses and prices token A in
+  token B. Pool creation refuses mints in the other order (`orderMints` first), and the liquidity
+  parameter in SDK 8 is `{ tokenMaxA, tokenMaxB }` (the published docs still show `{ tokenA }`).
+- **Policy.** A new `orca` program permission allows the Whirlpool program
+  (`whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc`, the same id on mainnet; a test keeps our
+  constant equal to the SDK's) and the associated-token program, whose instruction the policy
+  already checks for the account's owner. Like the Jupiter instruction, the swap itself is opaque
+  to the policy: its USD value comes from the pool's quote through the tool's `intent`, never from
+  the model. The `orca-*` tools refuse to build anything off devnet.
+- **Where the code is.** Every Orca import is in `packages/tools/src/orca.ts`. The tools are in
+  `packages/tools/src/tools/orca.ts`; `scripts/beta-setup.ts` creates and funds the pool; the
+  server's keeper (`apps/server/src/beta/keeper.ts`) keeps it near the live price.
+- **The keeper.** For a single full-range position the pool is a constant-product pool with
+  reserves L/√P and L·√P, so the input that moves it to a target price is exact up to the fee
+  (`rebalanceTrade`). Every five minutes the treasury compares the pool with the live JitoSOL
+  price and, beyond 2%, mints the token the pool is short of and sells it in, at most a tenth of
+  the reserve per run. With no live price it does nothing.
 
 ## `packages/core` (Phase 2)
 

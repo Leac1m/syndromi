@@ -26,7 +26,7 @@ import {
 import { beforeAll, describe, expect, it } from "vitest";
 import { createPolicySigner, evaluate, type Intent, type Policy } from "./policy.js";
 import { StaticPriceSource } from "./prices.js";
-import { JUPITER_PROGRAM_ADDRESS } from "./programs.js";
+import { JUPITER_PROGRAM_ADDRESS, ORCA_WHIRLPOOL_PROGRAM_ADDRESS } from "./programs.js";
 import { findToken } from "./tokens.js";
 
 const usdcToken = findToken("USDC", "mainnet");
@@ -82,6 +82,11 @@ const jupiterSwap = (): Instruction => ({
   accounts: [],
   data: new Uint8Array([1, 2, 3]),
 });
+const orcaSwap = (): Instruction => ({
+  programAddress: ORCA_WHIRLPOOL_PROGRAM_ADDRESS,
+  accounts: [],
+  data: new Uint8Array([4, 5, 6]),
+});
 const swapIntent = (usdAmount: number, mint: Address = USDC): Intent => ({
   kind: "swap",
   inputMint: mint,
@@ -110,6 +115,59 @@ type Row = {
 };
 
 const rows: Row[] = [
+  {
+    name: "Orca swap that first creates the agent's output token account",
+    build: async () => [
+      getCreateAssociatedTokenIdempotentInstruction({
+        payer: createNoopSigner(agent.address),
+        owner: agent.address,
+        mint: SOL,
+        ata: await ata(agent.address, SOL),
+      }),
+      orcaSwap(),
+    ],
+    intent: swapIntent(5),
+    policy: { programs: ["orca"] },
+    verdict: "allow",
+  },
+  {
+    name: "Orca swap when the owner only allowed Jupiter",
+    build: () => [orcaSwap()],
+    intent: swapIntent(5),
+    verdict: "block",
+    reason: /whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc not in allowlist/,
+  },
+  {
+    name: "Orca swap that would open a token account for someone else",
+    build: async () => [
+      getCreateAssociatedTokenIdempotentInstruction({
+        payer: createNoopSigner(agent.address),
+        owner: attacker,
+        mint: SOL,
+        ata: await ata(attacker, SOL),
+      }),
+      orcaSwap(),
+    ],
+    intent: swapIntent(5),
+    policy: { programs: ["orca"] },
+    verdict: "block",
+    reason: /token account for .* not in allowlist/,
+  },
+  {
+    name: "Orca swap over the per-tx cap",
+    build: () => [orcaSwap()],
+    intent: swapIntent(30),
+    policy: { programs: ["orca"] },
+    verdict: "block",
+    reason: /per-tx cap/,
+  },
+  {
+    name: "a token transfer under the orca permission alone",
+    build: () => [transfer(agentAta, 1)],
+    policy: { programs: ["orca"] },
+    verdict: "block",
+    reason: /TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA not in allowlist/,
+  },
   {
     name: "swap under the approval threshold",
     build: () => [jupiterSwap()],

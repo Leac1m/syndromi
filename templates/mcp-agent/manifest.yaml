@@ -6,9 +6,9 @@ runtime: external
 allowance: { mint: USDC, amount: 5, period: weekly }
 fee_budget: { sol: 0.02 }
 permissions:
-  programs: [jupiter, subscriptions]
+  programs: [jupiter, orca, subscriptions]
   destinations: [self]
   max_tx_usd: 10
   approve_above_usd: 5
-tools: [balances, pyth-price, jupiter-quote, jupiter-swap, pull-allowance, request-topup, propose-tx]
+tools: [balances, pyth-price, jupiter-quote, jupiter-swap, orca-quote, orca-swap, pull-allowance, request-topup, propose-tx]
 prompt: ./prompt.md

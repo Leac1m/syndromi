@@ -38,7 +38,8 @@ The Foundation gave Solana allowances. syndromí turns them into safe, governabl
 - **Fee budget** = small SOL transfer from owner to agent wallet at creation (covers tx fees and token-account rent).
 - **Policy layer** = a signer wrapper in `packages/core`. Nothing signs without passing it. Swig smart-wallet permissions passed the Phase-1 spike (see `docs/architecture.md`). They are a first stretch item layered on top of the offchain signer, never a replacement for it.
 - **Devnet test tokens** (Beta phase 4): on devnet, `USDC` and `JitoSOL` in the token registry (`packages/core/src/tokens.ts`) are syndromí's own test mints, the devnet twins of the mainnet tokens (same symbol and decimals, priced as the mainnet token, worth nothing). The beta treasury (`SYNDROMI_TREASURY_KEY`, devnet only) is their mint authority; `pnpm beta:setup` creates them and `POST /owner/faucet` hands out test USDC, one claim per wallet per day. Circle's devnet USDC is not used. Testers get devnet SOL from the public faucet themselves.
-- **Network**: devnet by default. Jupiter is mainnet-only, so swaps are tested against a Surfpool mainnet fork. **Wallet-signed swaps can only be shown end to end on mainnet** (decided Phase 5: Phantom cannot reach the fork), so mainnet runs use a few dollars. Build and rehearse on devnet and the fork first; use a fresh owner wallet with about $30 USDC + 0.05 SOL.
+- **Devnet swaps** (Beta phase 5): an Orca Splash Pool (full range) of the two test tokens, traded with the `orca-quote` and `orca-swap` tools under the `orca` program permission; devnet only. Every Orca import lives in `packages/tools/src/orca.ts`. `@orca-so/whirlpools` is pinned to 8.0.1: it declares a peer on kit ^5 and runs under our kit 7 (allowed in `pnpm-workspace.yaml`), so run `pnpm spike:orca` again before moving the pin. The server's keeper (`apps/server/src/beta/keeper.ts`) holds the pool near the live price.
+- **Network**: devnet by default. Jupiter is mainnet-only, so on devnet agents swap on the Orca test pool, and Jupiter swaps are tested against a Surfpool mainnet fork. **Wallet-signed swaps can only be shown end to end on mainnet** (decided Phase 5: Phantom cannot reach the fork), so mainnet runs use a few dollars. Build and rehearse on devnet and the fork first; use a fresh owner wallet with about $30 USDC + 0.05 SOL.
 
 ## Stack
 
@@ -62,8 +63,8 @@ apps/
 packages/
   core/          bag client, delegation helpers, agent wallet, policy signer, manifest schema (zod)
   runtime/       agent loop, LLM providers, tool registry, scheduler
-  tools/         first-party tools: pyth-price, jupiter-quote, jupiter-swap, balances,
-                 pull-allowance, request-topup, propose-tx
+  tools/         first-party tools: pyth-price, jupiter-quote, jupiter-swap, orca-quote,
+                 orca-swap, balances, pull-allowance, request-topup, propose-tx
   cli/           `syndromi init | run | deploy | revoke`
 templates/
   dca-agent/     manifest + prompt
@@ -73,7 +74,8 @@ fixtures/
 docs/
   manifest-spec.md, package-spec.md, architecture.md
 scripts/
-  spike-*.ts     Phase-1 spikes
+  spike-*.ts     Phase-1 spikes, and spike-orca.ts (Beta phase 5)
+  beta-setup.ts  devnet test tokens and the Orca test pool (pnpm beta:setup)
 ```
 
 ## Agent manifest (target shape)

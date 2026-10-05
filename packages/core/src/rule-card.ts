@@ -6,6 +6,7 @@ import type { ProgramName } from "./programs.js";
 const PERIOD_WORD: Record<Period, string> = { daily: "day", weekly: "week", monthly: "month" };
 const PROGRAM_WORD: Record<ProgramName, string> = {
   jupiter: "Jupiter swaps",
+  orca: "swaps on the devnet test pool (Orca)",
   subscriptions: "pulling its allowance",
   token: "token transfers",
   system: "SOL transfers",

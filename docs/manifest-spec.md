@@ -24,11 +24,11 @@ schema below; unknown fields are rejected, and every error names its field.
 | `fee_budget` | object | yes |  | One-time SOL for transaction fees. |
 | `fee_budget.sol` | number | yes | > 0, ≤ 1 | SOL sent to the agent wallet when funded (fees and token-account rent). |
 | `permissions` | object | yes |  | Rules the policy signer enforces on every transaction before signing. |
-| `permissions.programs` | list of `jupiter` \| `token` \| `system` \| `subscriptions` | yes | at least 1 | Programs a transaction may call (compute budget is always allowed): jupiter, token, system, subscriptions. |
+| `permissions.programs` | list of `jupiter` \| `orca` \| `token` \| `system` \| `subscriptions` | yes | at least 1 | Programs a transaction may call (compute budget is always allowed): jupiter, orca (the devnet test pool), token, system, subscriptions. |
 | `permissions.destinations` | list of `self` or string | yes | at least 1 | Where funds may go: `self` (the agent's own wallet) and/or Solana addresses. Everything else is BLOCKED. |
 | `permissions.max_tx_usd` | number | yes | > 0 | Largest USD value one transaction may move; above it is BLOCKED. |
 | `permissions.approve_above_usd` | number | yes | ≥ 0 | Transactions above this USD value become drafts the owner must sign; must not exceed max_tx_usd. |
-| `tools` | list of `pyth-price` \| `balances` \| `jupiter-quote` \| `jupiter-swap` \| `pull-allowance` \| `request-topup` \| `propose-tx` \| `yield-data` | yes | at least 1 | First-party tools the model may call. Only write tools produce transactions. |
+| `tools` | list of `pyth-price` \| `balances` \| `jupiter-quote` \| `jupiter-swap` \| `orca-quote` \| `orca-swap` \| `pull-allowance` \| `request-topup` \| `propose-tx` \| `yield-data` | yes | at least 1 | First-party tools the model may call. Only write tools produce transactions. |
 | `prompt` | string | no |  | Path to the prompt file, relative to the manifest (e.g. ./prompt.md). Required unless runtime is external, where it is optional standing guidance shown to the MCP client. |
 | `demo` | object | no |  | DEMO ONLY: switches for the prompt-injection demo (fixtures/injection/pool-scout). Never set them on real agents. |
 | `demo.injection` | boolean | no |  | yield-data also returns the malicious pool description. |
@@ -43,7 +43,7 @@ schema below; unknown fields are rejected, and every error names its field.
 ## Values
 
 - Periods: `daily` (86400 s), `weekly` (604800 s), `monthly` (2592000 s).
-- Tools: `pyth-price`, `balances`, `jupiter-quote`, `jupiter-swap`, `pull-allowance`, `request-topup`, `propose-tx`, `yield-data`. See `docs/package-spec.md` for what each does.
+- Tools: `pyth-price`, `balances`, `jupiter-quote`, `jupiter-swap`, `orca-quote`, `orca-swap`, `pull-allowance`, `request-topup`, `propose-tx`, `yield-data`. See `docs/package-spec.md` for what each does.
 - Keys never appear in a manifest: `api_key_env` names the variable, and the runtime reads it.
 
 ## Example

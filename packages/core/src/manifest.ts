@@ -10,6 +10,8 @@ export const TOOL_NAMES = [
   "balances",
   "jupiter-quote",
   "jupiter-swap",
+  "orca-quote",
+  "orca-swap",
   "pull-allowance",
   "request-topup",
   "propose-tx",
@@ -107,7 +109,7 @@ export const manifestSchema = z
           .array(z.enum(PROGRAM_NAMES))
           .min(1)
           .describe(
-            "Programs a transaction may call (compute budget is always allowed): jupiter, token, system, subscriptions.",
+            "Programs a transaction may call (compute budget is always allowed): jupiter, orca (the devnet test pool), token, system, subscriptions.",
           ),
         destinations: z
           .array(destination)

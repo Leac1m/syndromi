@@ -7,6 +7,9 @@
 //      JitoSOL (9 decimals). They are registered in packages/core/src/tokens.ts as the devnet
 //      twins of the mainnet tokens, so prices and templates work unchanged.
 //
+//   4. An Orca Splash Pool (full range) for the pair, created at the live JitoSOL price and
+//      funded from freshly minted tokens, so agents have somewhere to swap on devnet.
+//
 // Devnet only. Run with: pnpm beta:setup
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -20,11 +23,15 @@ import {
 import { getCreateAccountInstruction, getTransferSolInstruction } from "@solana-program/system";
 import {
   fetchMaybeMint,
+  findAssociatedTokenPda,
+  getCreateAssociatedTokenIdempotentInstructionAsync,
   getInitializeMint2Instruction,
   getMintSize,
+  getMintToCheckedInstruction,
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import {
+  createPriceSource,
   explorerTx,
   findToken,
   generateAgentKeypair,
@@ -33,14 +40,22 @@ import {
   secretKeyBytes,
   signAndSend,
   syndromiHome,
+  toBaseUnits,
   toUiAmount,
 } from "@syndromi/core";
+import {
+  createTestPoolInstructions,
+  fetchTestPool,
+  fullRangeLiquidityInstructions,
+} from "@syndromi/tools";
 import { ownerKeypairPath } from "./lib/keys.js";
 
 const TEST_TOKENS = [
   { symbol: "USDC", decimals: 6 },
   { symbol: "JitoSOL", decimals: 9 },
 ] as const;
+/** Test USDC put into the pool, with the matching JitoSOL: deep enough that a tester's swap barely moves it. */
+const POOL_USDC = 1_000_000;
 const MIN_SOL = 0.3;
 const TOP_UP_LAMPORTS = 1_000_000_000n;
 
@@ -123,6 +138,75 @@ async function createMint(signer: KeyPairSigner, decimals: number): Promise<Addr
   return mint.address;
 }
 
+/** Whole test USDC per whole test JitoSOL, from the mainnet tokens' live prices. */
+async function livePrice(): Promise<number> {
+  const prices = createPriceSource();
+  const [usdc, jito] = await Promise.all(
+    TEST_TOKENS.map(({ symbol }) => {
+      const mint = findToken(symbol, "mainnet")?.mints.mainnet;
+      return mint ? prices.usdPrice(mint) : undefined;
+    }),
+  );
+  if (!usdc || !jito) throw new Error("no live price for USDC or JitoSOL; try again in a minute");
+  return jito / usdc;
+}
+
+async function ensurePool(signer: KeyPairSigner, usdc: Address, jito: Address) {
+  let pool = await fetchTestPool(rpc, usdc, jito);
+  const usdcPerJito = await livePrice();
+  if (!pool) {
+    const created = await createTestPoolInstructions(rpc, {
+      mintOne: jito,
+      mintTwo: usdc,
+      priceTwoPerOne: usdcPerJito,
+      funder: signer,
+    });
+    const signature = await signAndSend(rpc, signer, created.instructions);
+    console.log(`Created the test pool ${created.address}: ${explorerTx(signature, "devnet")}`);
+    pool = await fetchTestPool(rpc, usdc, jito);
+    if (!pool) throw new Error("the pool was created but cannot be read back yet; run this again");
+  }
+  if (pool.liquidity === 0n) {
+    // Mint a little more JitoSOL than the price implies: the deposit takes what it needs.
+    const max: Record<Address, bigint> = {
+      [usdc]: toBaseUnits(POOL_USDC, 6),
+      [jito]: toBaseUnits((POOL_USDC / usdcPerJito) * 1.05, 9),
+    };
+    const mintTo = async (mint: Address, decimals: number) => [
+      await getCreateAssociatedTokenIdempotentInstructionAsync({
+        payer: signer,
+        owner: signer.address,
+        mint,
+      }),
+      getMintToCheckedInstruction({
+        mint,
+        token: (
+          await findAssociatedTokenPda({
+            owner: signer.address,
+            mint,
+            tokenProgram: TOKEN_PROGRAM_ADDRESS,
+          })
+        )[0],
+        mintAuthority: signer,
+        amount: max[mint] ?? 0n,
+        decimals,
+      }),
+    ];
+    await signAndSend(rpc, signer, [...(await mintTo(usdc, 6)), ...(await mintTo(jito, 9))]);
+    const opened = await fullRangeLiquidityInstructions(rpc, { pool, max, funder: signer });
+    const signature = await signAndSend(rpc, signer, opened.instructions);
+    console.log(
+      `Added full-range liquidity (position ${opened.positionMint}): ${explorerTx(signature, "devnet")}`,
+    );
+    pool = (await fetchTestPool(rpc, usdc, jito)) ?? pool;
+  }
+  const poolUsdcPerJito = pool.mintA === jito ? pool.priceBPerA : 1 / pool.priceBPerA;
+  console.log(
+    `Test pool: ${pool.address} (Orca Splash Pool, fee ${pool.fee * 100}%), 1 JitoSOL = ` +
+      `${poolUsdcPerJito.toFixed(2)} USDC in the pool, ${usdcPerJito.toFixed(2)} live`,
+  );
+}
+
 async function main() {
   const signer = await treasury();
   console.log(`Treasury: ${signer.address}`);
@@ -151,6 +235,8 @@ async function main() {
     state[symbol] = mint;
   }
   await writeFile(stateFile, `${JSON.stringify(state, null, 2)}\n`);
+
+  await ensurePool(signer, state.USDC as Address, state.JitoSOL as Address);
 
   if (unregistered) {
     console.log(

@@ -19,7 +19,7 @@ describe("ruleCard", () => {
   it("states the yield-scout budget and rules in plain language", () => {
     expect(ruleCard(manifest("yield-scout"))).toEqual([
       "yield-scout may take up to 50 USDC per week from your bag. The limit is enforced onchain.",
-      "It may only use Jupiter swaps and pulling its allowance, and funds may only go to its own wallet.",
+      "It may only use Jupiter swaps, swaps on the devnet test pool (Orca) and pulling its allowance, and funds may only go to its own wallet.",
       "No single transaction may move more than $25; anything above $10 waits for your signature.",
       "You send it 0.02 SOL once for network fees.",
       "It runs hosted by syndromi, which holds its key.",

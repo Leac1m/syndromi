@@ -255,6 +255,21 @@ Testers no longer need Circle's faucet. syndromí runs its own devnet test token
 - **Existing devnet agents** funded with Circle's devnet USDC keep their onchain allowance, but the
   token now shows as a mint address. Revoke and recreate them.
 
+### A pool to swap in (Beta phase 5, Oct 5)
+
+- **Pool:** `HRjoKcD6XQWZhnVFyjp7ViZtAuvLtx4wfvLXb2xfvq3H`, an Orca Splash Pool (full range, 1%
+  fee) for test USDC / test JitoSOL on Orca's devnet deployment, created by `pnpm beta:setup` at
+  the live JitoSOL price with 1,000,000 test USDC and the matching JitoSOL from the treasury. A
+  100 USDC swap moves it by about 0.01%.
+- **Tools:** `orca-quote` and `orca-swap` (devnet only), and an `orca` program permission. The
+  three templates list them next to the Jupiter tools; `jupiter-*` on devnet now answers "use
+  `orca-swap`". Agents created before this need the tools and the permission added to swap.
+- **Keeper:** runs in the server when the treasury key is set; see architecture, decision 4.
+- **Checked for real on devnet:** `SYNDROMI_DEVNET_E2E=1 pnpm test packages/runtime/src/devnet.test.ts`
+  grants an allowance in test USDC, then a scripted run pulls it, swaps 3 USDC (executed), tries 6
+  (held for approval), tries a transfer to a stranger (blocked) and asks for a top-up. It needs the
+  treasury key and sends real devnet transactions, so it is skipped unless asked for.
+
 ### Choosing the domain
 
 | Option | Stable? | Cost | Fit |

@@ -62,6 +62,9 @@ pnpm syndromi revoke --all               # the kill switch
 `run` prints each step: the model's tool calls, the policy's verdict on each transaction, what
 was sent (with explorer links), and anything held for approval.
 
+On devnet there is no Jupiter, so the agent swaps on syndromí's own Orca test pool (test USDC and
+test JitoSOL, tools `orca-quote` and `orca-swap`): the DCA agent buys JitoSOL there instead of SOL.
+
 The dashboard and phone approvals:
 1. Add `SYNDROMI_SERVER_TOKEN` (`openssl rand -hex 24`), `SYNDROMI_HOSTED_SECRET`
    (`openssl rand -hex 32`) and `TELEGRAM_BOT_TOKEN` to `.env`.
@@ -183,12 +186,11 @@ app under `/app` (connect Phantom, bag, agents, approvals, kill switch). Both ar
 
 ## Status and roadmap
 
-v0.1.0: everything above works on devnet and on a Surfpool mainnet fork (for Jupiter swaps).
+v0.1.0: everything above works on devnet (swaps on the Orca test pool) and on a Surfpool mainnet
+fork (Jupiter swaps).
 Mainnet needs `--mainnet` and a typed confirmation; keep runs to a few dollars for now.
 
 Next:
-- a cloud deployment of the hosted runtime (today it runs on the owner's machine behind a
-  tunnel);
 - managed key custody for hosted agents (MPC or TEE);
 - Swig smart-wallet rules onchain, layered on the offchain policy signer (the spike passed);
 - agents paying for data APIs from their allowance via x402;

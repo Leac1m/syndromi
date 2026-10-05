@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { syndromiHome } from "@syndromi/core";
 import { listen } from "./app.js";
 import { faucetAmount } from "./beta/faucet.js";
+import { startKeeper } from "./beta/keeper.js";
 import { loadTreasury, TREASURY_LOW_SOL, treasurySol } from "./beta/treasury.js";
 import { createContext } from "./context.js";
 import { Store } from "./db.js";
@@ -69,6 +70,8 @@ try {
     if (sol !== undefined && sol < TREASURY_LOW_SOL) {
       console.warn("Treasury is low on devnet SOL: top it up or the faucet will stop working.");
     }
+    startKeeper(ctx);
+    console.log("Test pool keeper: on (checks the Orca test pool against the live price).");
   } else {
     console.log("Test-token faucet: off (SYNDROMI_TREASURY_KEY not set).");
   }

@@ -1,7 +1,14 @@
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import {
+  getBase58Encoder,
+  getUtf8Encoder,
+  type SignatureBytes,
+  verifySignature,
+} from "@solana/kit";
+import { generateAgentKeypair } from "@syndromi/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CliError, type Io } from "./io.js";
 import { main } from "./main.js";
 
@@ -26,6 +33,69 @@ async function tempEnv() {
     },
   };
 }
+
+describe("syndromi faucet", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("is devnet only and needs a server", async () => {
+    await expect(main(["faucet", "--mainnet"], fakeIo(), {})).rejects.toThrow(/devnet only/);
+    await expect(main(["faucet"], fakeIo(), {})).rejects.toThrow(/no server/);
+  });
+
+  it("signs in with the owner key, claims, and reports a refusal with its next time", async () => {
+    const { home } = await tempEnv();
+    const keyFile = join(home, "owner.json");
+    const owner = await generateAgentKeypair();
+    await writeFile(keyFile, JSON.stringify([...owner.secretKey]));
+    const env = { OWNER_KEYPAIR: keyFile, SYNDROMI_SERVER_URL: "https://api.example/" };
+    const text = "Sign in to syndromi";
+    let refuse = false;
+    const calls: { path: string; body: Record<string, string>; auth: string | null }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        const path = new URL(String(url)).pathname;
+        const body = JSON.parse(String(init?.body)) as Record<string, string>;
+        calls.push({ path, body, auth: new Headers(init?.headers).get("authorization") });
+        if (path === "/owner/session/challenge") return Response.json({ nonce: "n1", text });
+        if (path === "/owner/session") return Response.json({ token: "session-token" });
+        if (refuse) {
+          return Response.json(
+            { error: "you already claimed test tokens today", nextAt: "2026-10-06T00:00:00.000Z" },
+            { status: 429 },
+          );
+        }
+        return Response.json({ amount: 100, symbol: "USDC", signature: "5ig" });
+      }),
+    );
+
+    const io = fakeIo();
+    await main(["faucet"], io, env);
+    expect(calls.map((c) => c.path)).toEqual([
+      "/owner/session/challenge",
+      "/owner/session",
+      "/owner/faucet",
+    ]);
+    expect(calls[0]?.body.owner).toBe(owner.signer.address);
+    // The session is opened with the owner's signature over the server's text, and the claim
+    // carries that session.
+    const signed = getBase58Encoder().encode(calls[1]?.body.signature ?? "");
+    expect(
+      await verifySignature(
+        owner.signer.keyPair.publicKey,
+        signed as SignatureBytes,
+        getUtf8Encoder().encode(text),
+      ),
+    ).toBe(true);
+    expect(calls[2]?.auth).toBe("Bearer session-token");
+    expect(io.lines.join("\n")).toMatch(/100 test USDC sent to .*\n.*cluster=devnet/);
+
+    refuse = true;
+    await expect(main(["faucet"], fakeIo(), env)).rejects.toThrow(
+      /already claimed test tokens today \(next claim after 2026-10-06/,
+    );
+  });
+});
 
 describe("syndromi CLI", () => {
   it("prints help, and rejects unknown commands and conflicting clusters", async () => {

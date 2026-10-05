@@ -23,7 +23,9 @@ export type AgentView = {
 export type Overview = {
   owner: string;
   cluster: Network;
-  bag: { usdc: number; sol: number; usdcMint?: string };
+  bag: { usdc: number; sol: number; usdcMint?: string; symbol: string };
+  /** Devnet, when the server runs the test-token faucet: what a claim gives and when the next is due. */
+  faucet?: { amount: number; nextAt: string | null };
   allocatedPerPeriod: Record<string, number>;
   agents: AgentView[];
   pending: {
@@ -206,6 +208,7 @@ export const api = {
       undefined,
       "DELETE",
     ),
+  faucet: () => call<{ amount: number; symbol: string; signature: string }>("/owner/faucet", {}),
   telegram: () => call<{ enabled: boolean; chats: number }>("/owner/telegram"),
   telegramLink: () => call<{ url: string; expiresAt: string }>("/owner/telegram/link", {}),
   telegramDisconnect: () => call<{ unlinked: number }>("/owner/telegram", undefined, "DELETE"),

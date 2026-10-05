@@ -5,6 +5,7 @@ import { type Address, address, isAddress } from "@solana/kit";
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import {
   type Cluster,
+  decimalsOf,
   encryptKeypair,
   findToken,
   generateAgentKeypair,
@@ -20,6 +21,7 @@ import {
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { serialize } from "./api.js";
+import { claimTestTokens, FAUCET_WINDOW_MS, faucetAmount } from "./beta/faucet.js";
 import type { ServerContext } from "./context.js";
 import { type AgentRecord, TokenLimit } from "./db.js";
 import { challenge, signIn } from "./sessions.js";
@@ -125,8 +127,8 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
         nextRun: a.runtime === "hosted" ? (ctx.hosted?.nextRun?.(a.name)?.getTime() ?? null) : null,
         allowanceLeft: allowance
           ? {
-              remaining: toUiAmount(allowance.remaining, 6),
-              limit: toUiAmount(allowance.limit, 6),
+              remaining: toUiAmount(allowance.remaining, decimalsOf(allowance.mint)),
+              limit: toUiAmount(allowance.limit, decimalsOf(allowance.mint)),
               periodEndsAt: allowance.periodEndsAt
                 ? Number(allowance.periodEndsAt) * 1000
                 : undefined,
@@ -135,7 +137,7 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
         topUps: own
           .filter((d) => d.kind === "top-up")
           .map((d) => ({
-            remaining: toUiAmount(d.remaining, 6),
+            remaining: toUiAmount(d.remaining, decimalsOf(d.mint)),
             expiresAt: Number(d.expiresAt) * 1000,
           })),
         pending:
@@ -147,7 +149,21 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
       serialize({
         owner: who,
         cluster,
-        bag: { usdc: toUiAmount(bag, 6), sol: toUiAmount(sol, 9), usdcMint },
+        bag: {
+          usdc: toUiAmount(bag, usdc?.decimals ?? 6),
+          sol: toUiAmount(sol, 9),
+          usdcMint,
+          symbol: usdc?.symbol ?? "USDC",
+        },
+        // Devnet only: syndromí's own test tokens, handed out by the treasury (beta/faucet.ts).
+        ...(cluster === "devnet" && ctx.treasury
+          ? {
+              faucet: {
+                amount: faucetAmount(config.env),
+                nextAt: (await store.nextFaucetClaim(who, FAUCET_WINDOW_MS)) ?? null,
+              },
+            }
+          : {}),
         allocatedPerPeriod: perPeriod,
         agents: view,
         pending: {
@@ -162,13 +178,25 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
           topups: pendingTopUps.map((t) => ({
             id: t.id,
             agentName: t.agentName,
-            amount: toUiAmount(t.amount, 6),
+            amount: toUiAmount(t.amount, decimalsOf(t.mint)),
             reason: t.reason,
             expiresAt: t.expiresAt,
           })),
         },
       }),
     );
+  });
+
+  // Test tokens for the signed-in wallet, on devnet (one claim a day).
+  owner.post("/faucet", async (c) => {
+    const result = await claimTestTokens(ctx, c.get("owner") as Address);
+    if (!result.ok) {
+      return c.json(
+        { error: result.error, ...(result.nextAt ? { nextAt: result.nextAt } : {}) },
+        result.status,
+      );
+    }
+    return c.json(result);
   });
 
   owner.get("/activity", async (c) => {

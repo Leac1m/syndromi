@@ -8,7 +8,7 @@
 // verdict in the body. HTTP errors are only for the protocol: 400 input, 401 token, 403 origin or
 // plain http, 404 tool, 413 size, 429 rate, 503 not ready.
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { listDelegations } from "@syndromi/core";
+import { decimalsOf, listDelegations, toUiAmount } from "@syndromi/core";
 import { buildMcpServer, callTool, type ToolCallOptions } from "@syndromi/runtime";
 import type { Toolset } from "@syndromi/tools";
 import type { Context, Hono } from "hono";
@@ -174,8 +174,8 @@ export function mountAgentApi(app: Hono, ctx: ServerContext) {
       const own = delegations.find((d) => d.agent === agent.address && d.kind === "allowance");
       if (own) {
         allowanceLeft = {
-          remaining: Number(own.remaining) / 1e6,
-          limit: Number(own.limit) / 1e6,
+          remaining: toUiAmount(own.remaining, decimalsOf(own.mint)),
+          limit: toUiAmount(own.limit, decimalsOf(own.mint)),
           ...(own.periodEndsAt ? { periodEndsAt: Number(own.periodEndsAt) * 1000 } : {}),
         };
       }

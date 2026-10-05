@@ -7,7 +7,7 @@
 // 127.0.0.1 works.
 // Updates arrive by long polling, or by webhook when TELEGRAM_WEBHOOK_SECRET is set (a hosted
 // server that sleeps is woken by Telegram's request).
-import { explorerTx, tokenByMint, toUiAmount } from "@syndromi/core";
+import { explorerTx, formatTokenAmount } from "@syndromi/core";
 import { Bot, InlineKeyboard, type Transformer, webhookCallback } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import type { Context as HonoContext } from "hono";
@@ -319,10 +319,7 @@ export async function createTelegram(
   };
 }
 
-function amount(t: TopUpRecord) {
-  const token = tokenByMint(t.mint);
-  return `${toUiAmount(t.amount, token?.decimals ?? 6)} ${token?.symbol ?? "tokens"}`;
-}
+const amount = (t: TopUpRecord) => formatTokenAmount(t.mint, t.amount);
 
 const esc = (s: string) =>
   s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");

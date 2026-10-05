@@ -123,6 +123,8 @@ create table if not exists telegram_links (
 create table if not exists telegram_codes (
   code text primary key, owner text not null, created_at text not null,
   used integer not null default 0);
+create table if not exists faucet_claims (
+  id text primary key, owner text not null, at text not null, signature text);
 `;
 
 type Dialect = "sqlite" | "postgres";
@@ -741,6 +743,57 @@ export class Store {
       [chatId],
     );
     return rows.map((r) => r.owner);
+  }
+
+  // ------------------------------------------------------------------ faucet
+  /**
+   * Take `owner`'s test-token claim for this window: recorded and granted unless they already
+   * hold one from the last `windowMs`. The caller then mints, and either confirms the claim with
+   * the signature or releases it if the mint failed (so a failure does not cost the day).
+   */
+  reserveFaucetClaim(
+    owner: string,
+    windowMs: number,
+    now = new Date(),
+  ): Promise<{ ok: true; id: string } | { ok: false; nextAt: string }> {
+    return this.serialize(`faucet:${owner}`, async () => {
+      const last = await this.get<{ at: string }>(
+        "select at from faucet_claims where owner = ? order by at desc limit 1",
+        [owner],
+      );
+      if (last && now.getTime() - Date.parse(last.at) < windowMs) {
+        return { ok: false, nextAt: new Date(Date.parse(last.at) + windowMs).toISOString() };
+      }
+      const id = crypto.randomUUID();
+      await this.run("insert into faucet_claims (id, owner, at) values (?, ?, ?)", [
+        id,
+        owner,
+        now.toISOString(),
+      ]);
+      return { ok: true, id };
+    });
+  }
+
+  async confirmFaucetClaim(id: string, signature: string) {
+    await this.run("update faucet_claims set signature = ? where id = ?", [signature, id]);
+  }
+
+  async releaseFaucetClaim(id: string) {
+    await this.run("delete from faucet_claims where id = ?", [id]);
+  }
+
+  /** When `owner` may claim again, or undefined if they may now. */
+  async nextFaucetClaim(
+    owner: string,
+    windowMs: number,
+    now = new Date(),
+  ): Promise<string | undefined> {
+    const last = await this.get<{ at: string }>(
+      "select at from faucet_claims where owner = ? order by at desc limit 1",
+      [owner],
+    );
+    if (!last || now.getTime() - Date.parse(last.at) >= windowMs) return undefined;
+    return new Date(Date.parse(last.at) + windowMs).toISOString();
   }
 
   // ------------------------------------------------------------------ settings

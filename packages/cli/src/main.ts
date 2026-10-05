@@ -5,6 +5,7 @@ import { redact } from "@syndromi/core";
 import { action } from "./commands/action.js";
 import { approve } from "./commands/approve.js";
 import { deploy } from "./commands/deploy.js";
+import { faucet } from "./commands/faucet.js";
 import { fund } from "./commands/fund.js";
 import { init } from "./commands/init.js";
 import { mcp } from "./commands/mcp.js";
@@ -24,6 +25,7 @@ const HELP = `syndromi <command>
                                           copy a template (default: mcp-agent, a wallet for Claude
                                           or any MCP client) and create the agent's encrypted key;
                                           with a server, register it for funding in the dashboard
+  faucet [--server <url>]                 owner: get devnet test USDC from the server's faucet
   fund <dir>                              owner: send the fee budget and grant the allowance
   run <dir> [--once] [--server <url>] [--max-steps n] [--model [nvidia|gemini|anthropic:]id]
                                           run now (--once) or on the schedule; with a server,
@@ -88,6 +90,8 @@ export async function main(argv: string[], io: Io = terminalIo, env: Env = proce
         io,
         env,
       );
+    case "faucet":
+      return faucet({ cluster, ...(values.server ? { server: values.server } : {}) }, io, env);
     case "fund":
       return fund(needTarget(), { cluster }, io, env);
     case "run": {

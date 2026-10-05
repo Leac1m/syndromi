@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { formatTokenAmount } from "@syndromi/core";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { mountApproveDraft } from "./actions/approve-draft.js";
@@ -9,6 +10,7 @@ import { mountSpec } from "./actions/spec.js";
 import { mountAgentApi } from "./agent-api.js";
 import { mountApi } from "./api.js";
 import { mountApprovePage } from "./approve-page.js";
+import { TREASURY_LOW_SOL, treasurySol } from "./beta/treasury.js";
 import type { ServerContext } from "./context.js";
 import { mountOwner } from "./owner.js";
 import { mountOwnerTx } from "./owner-tx.js";
@@ -41,7 +43,14 @@ export function createApp(ctx: ServerContext) {
       console.error("healthz:", (e as Error).message);
       return c.json({ ok: false }, 503);
     }
-    return c.json({ ok: true, hosted: Boolean(ctx.hosted), telegram: Boolean(ctx.telegram) });
+    const sol = await treasurySol(ctx);
+    return c.json({
+      ok: true,
+      hosted: Boolean(ctx.hosted),
+      telegram: Boolean(ctx.telegram),
+      // Reported so a low treasury is noticed before the faucet stops; its balance is public.
+      ...(ctx.treasury ? { faucet: { sol: sol ?? null, low: (sol ?? 0) < TREASURY_LOW_SOL } } : {}),
+    });
   });
   return app;
 }
@@ -83,7 +92,7 @@ function recordApprovalEvents(ctx: ServerContext) {
         kind: "topup",
         id: t.id,
         status: t.status,
-        summary: `top-up of ${Number(t.amount) / 1e6} USDC: ${t.reason}`,
+        summary: `top-up of ${formatTokenAmount(t.mint, t.amount)}: ${t.reason}`,
         cluster: t.cluster,
         ...(t.resultSignature ? { signature: t.resultSignature } : {}),
       })

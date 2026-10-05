@@ -61,7 +61,7 @@ const engines = [
 
 const OWNER = "4Nd1mBQtrMJVYVfKf2PJy9NZUZdTAsp7D4xWLs4gDB4T" as Address;
 const OTHER = "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin" as Address;
-const MINT = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" as Address;
+const MINT = "8wvXYteqfNieCn4RVC8rnDSGgugHkMbPT4x8KnMeneVd" as Address;
 
 const agent = (name: string, owner = OWNER): AgentRecord => ({
   name,
@@ -268,6 +268,35 @@ describe.each(engines)("store on $name", (engine) => {
     await store.linkTelegram("300", OWNER);
     await store.linkTelegram("301", OWNER);
     expect(await store.unlinkTelegram(OWNER)).toBe(2);
+  });
+
+  it("grants one faucet claim per window, and gives a failed one back", async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const wallet = `faucet-${crypto.randomUUID()}`;
+    const at = (hours: number) => new Date(Date.parse("2026-10-05T00:00:00.000Z") + hours * 3.6e6);
+
+    const first = await store.reserveFaucetClaim(wallet, day, at(0));
+    expect(first.ok).toBe(true);
+    // Two at once: only one is granted.
+    const racing = await Promise.all([
+      store.reserveFaucetClaim(`${wallet}-b`, day, at(0)),
+      store.reserveFaucetClaim(`${wallet}-b`, day, at(0)),
+    ]);
+    expect(racing.filter((r) => r.ok)).toHaveLength(1);
+
+    const again = await store.reserveFaucetClaim(wallet, day, at(1));
+    expect(again).toEqual({ ok: false, nextAt: "2026-10-06T00:00:00.000Z" });
+    expect(await store.nextFaucetClaim(wallet, day, at(1))).toBe("2026-10-06T00:00:00.000Z");
+
+    // The mint failed: the claim is released and can be made again at once.
+    if (first.ok) await store.releaseFaucetClaim(first.id);
+    expect(await store.nextFaucetClaim(wallet, day, at(1))).toBeUndefined();
+    const retry = await store.reserveFaucetClaim(wallet, day, at(1));
+    expect(retry.ok).toBe(true);
+    if (retry.ok) await store.confirmFaucetClaim(retry.id, "sig");
+
+    expect((await store.reserveFaucetClaim(wallet, day, at(24))).ok).toBe(false);
+    expect((await store.reserveFaucetClaim(wallet, day, at(25))).ok).toBe(true);
   });
 
   it("keeps tokens as hashes, caps the live ones, and revokes on demand", async () => {

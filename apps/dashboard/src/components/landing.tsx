@@ -459,7 +459,7 @@ function Beta() {
     ],
     [
       "Get test funds",
-      "Devnet SOL from the faucet, and devnet USDC from Circle's faucet. No real money.",
+      "Devnet SOL from Solana's public faucet, and test USDC with one button in the app. No real money.",
     ],
     [
       "Create an agent",

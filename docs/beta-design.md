@@ -228,6 +228,33 @@ A free trial of the topology above, before the VPS:
   to the server…", which now only happens while a deploy restarts the server, and afterwards a lost
   connection shows a notice without clearing the page.
 
+### Test tokens and the faucet (Beta phase 4, Oct 5)
+
+Testers no longer need Circle's faucet. syndromí runs its own devnet test tokens:
+
+- **Mints:** test USDC `8wvXYteqfNieCn4RVC8rnDSGgugHkMbPT4x8KnMeneVd` (6 decimals) and test JitoSOL
+  `HHauXVZsFjs1UFCoBJun9dwmCMhbLPVxnmEpxPqRcdpv` (9 decimals): classic SPL Token, no freeze
+  authority, no Token-2022 extensions (the Subscriptions program rejects several). Created by
+  `pnpm beta:setup` (`scripts/beta-setup.ts`), which is safe to run again.
+- **Devnet twins:** they are registered as the `devnet` mints of `USDC` and `JitoSOL`. The policy
+  treats an unpriced token as "needs approval", so a token with no price would turn every action
+  into an approval request; a twin is priced as its mainnet token, and templates and prompts that
+  say `USDC` work on every network. The dashboard says they are test tokens with no value.
+- **Treasury:** `nZ1VHF3Xk6YsbL4cwgqFt1pqhkN1twCKdnbGneuUQMV`, the mint authority. Its key is
+  `SYNDROMI_TREASURY_KEY` on the server (a JSON byte array; locally `~/.syndromi/treasury.json`).
+  Back it up with `SYNDROMI_HOSTED_SECRET`: losing it means new mints and a registry change. It
+  spends a little devnet SOL (fees, and about 0.002 SOL of rent for each new wallet's token
+  account); `/healthz` reports `faucet.low` below 0.05 SOL.
+- **Faucet:** `POST /owner/faucet` (signed-in owner, devnet): 100 test USDC
+  (`SYNDROMI_FAUCET_USDC`) per wallet per day, recorded in `faucet_claims`. A failed mint gives the
+  claim back. The dashboard's wallet card has the button; `syndromi faucet --server <url>` does the
+  same for the CLI's owner wallet, signing in with the owner key (no admin token).
+- **Devnet SOL is the tester's job** (decided Oct 5, to keep this simple): the dashboard links to
+  the public Solana faucet when the wallet is low. That faucet is rate-limited and sometimes fails;
+  if testers get stuck there, a SOL drip is the fix.
+- **Existing devnet agents** funded with Circle's devnet USDC keep their onchain allowance, but the
+  token now shows as a mint address. Revoke and recreate them.
+
 ### Choosing the domain
 
 | Option | Stable? | Cost | Fit |

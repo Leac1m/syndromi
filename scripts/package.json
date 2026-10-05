@@ -8,7 +8,8 @@
     "spike:delegation": "tsx --env-file=../.env spike-delegation.ts",
     "spike:jupiter": "tsx --env-file=../.env spike-jupiter.ts",
     "spike:swig": "tsx --env-file=../.env spike-swig.ts",
-    "demo:core": "tsx --env-file=../.env demo-core.ts"
+    "demo:core": "tsx --env-file=../.env demo-core.ts",
+    "beta:setup": "tsx --env-file=../.env beta-setup.ts"
   },
   "dependencies": {
     "@solana-program/compute-budget": "^0.17.0",

@@ -43,7 +43,9 @@ pnpm syndromi fund templates/mcp-agent   # owner: fee budget + a 5 USDC/week all
 ## Quickstart with a built-in agent (devnet, about 60 seconds)
 
 Needs Node 20+, pnpm, and a devnet wallet at `~/.config/solana/id.json` (or `OWNER_KEYPAIR`) holding
-a little devnet SOL and devnet USDC ([Circle faucet](https://faucet.circle.com)). You also need a
+a little devnet SOL ([Solana's faucet](https://faucet.solana.com)) and test USDC. On devnet, USDC
+is syndromí's own test token: `pnpm syndromi faucet --server <server url>` sends 100 to that
+wallet, once a day (the dashboard has the same button). You also need a
 model key: the `dca-agent` template uses NVIDIA's free API catalog (`NVIDIA_API_KEY`).
 
 ```bash

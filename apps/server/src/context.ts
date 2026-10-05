@@ -1,5 +1,11 @@
 import { EventEmitter } from "node:events";
-import { type Address, createClient, createNoopSigner, createSolanaRpc } from "@solana/kit";
+import {
+  type Address,
+  createClient,
+  createNoopSigner,
+  createSolanaRpc,
+  type KeyPairSigner,
+} from "@solana/kit";
 import { solanaRpc } from "@solana/kit-plugin-rpc";
 import { signer } from "@solana/kit-plugin-signer";
 import { subscriptionsProgram } from "@solana/subscriptions";
@@ -44,6 +50,8 @@ export type ServerContext = {
   };
   /** The Telegram bot, when TELEGRAM_BOT_TOKEN is set. */
   telegram?: Telegram;
+  /** The beta treasury (devnet mint authority), when SYNDROMI_TREASURY_KEY is set (beta/treasury.ts). */
+  treasury?: KeyPairSigner;
   /** What happens after each kind of owner transaction lands (see owner-tx.ts). */
   completions: Map<string, (tx: never, signature: string | undefined) => Promise<unknown>>;
   bus: Bus;

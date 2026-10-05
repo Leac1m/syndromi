@@ -6,7 +6,7 @@ import {
   type KeyPairSigner,
   signBytes,
 } from "@solana/kit";
-import { decryptKeypair, type EncryptedKeypair } from "@syndromi/core";
+import { decryptKeypair, type EncryptedKeypair, findToken } from "@syndromi/core";
 import { fakeRpc } from "@syndromi/tools/testing";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
@@ -161,7 +161,7 @@ describe("owner-scoped data", () => {
       address: (await generateKeyPairSigner()).address,
       owner: bob.address as Address,
       cluster: "devnet",
-      allowanceMint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" as Address,
+      allowanceMint: "8wvXYteqfNieCn4RVC8rnDSGgugHkMbPT4x8KnMeneVd" as Address,
       rules: { maxTxUsd: 25, approveAboveUsd: 10, destinations: ["self"], programs: ["jupiter"] },
       registeredAt: new Date().toISOString(),
     });
@@ -291,6 +291,92 @@ describe("hosted agents: deploy and run now", () => {
   });
 });
 
+describe("test-token faucet", () => {
+  const TEST_USDC = findToken("USDC", "devnet")?.mints.devnet;
+  /** An RPC on which the treasury's transaction lands (or, with `fail`, is never accepted). */
+  const landing = (fail = false) => {
+    const sent: string[] = [];
+    const rpc = fakeRpc({
+      sendTransaction: (wire) => {
+        if (fail) throw new Error("node is behind");
+        sent.push(String(wire));
+        return "sig";
+      },
+      getSignatureStatuses: () => ({
+        value: [fail ? null : { confirmationStatus: "confirmed", err: null }],
+      }),
+    });
+    return { rpc, sent };
+  };
+  const session = async (who: KeyPairSigner) =>
+    ((await (await signInAs(who)).res.json()) as { token: string }).token;
+
+  it("is off without a treasury, and the overview does not offer it", async () => {
+    const token = await session(alice);
+    ctx.rpc = () => fakeRpc() as never;
+    const res = await req("/owner/faucet", { token, body: {} });
+    expect(res.status).toBe(503);
+    const overview = (await (await req("/owner/overview?cluster=devnet", { token })).json()) as {
+      faucet?: unknown;
+      bag: { symbol: string; usdcMint: string };
+    };
+    expect(overview.faucet).toBeUndefined();
+    expect(overview.bag).toMatchObject({ symbol: "USDC", usdcMint: TEST_USDC });
+  });
+
+  it("mints test USDC to the signed-in wallet once a day", async () => {
+    ctx.treasury = await generateKeyPairSigner();
+    const { rpc, sent } = landing();
+    ctx.rpc = () => rpc as never;
+    const token = await session(alice);
+    expect((await req("/owner/faucet", { body: {} })).status).toBe(401);
+
+    const before = (await (await req("/owner/overview?cluster=devnet", { token })).json()) as {
+      faucet: { amount: number; nextAt: string | null };
+    };
+    expect(before.faucet).toEqual({ amount: 100, nextAt: null });
+    // Only devnet has test tokens.
+    const mainnet = (await (await req("/owner/overview?cluster=mainnet", { token })).json()) as {
+      faucet?: unknown;
+    };
+    expect(mainnet.faucet).toBeUndefined();
+
+    const res = await req("/owner/faucet", { token, body: {} });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, amount: 100, symbol: "USDC" });
+    expect(sent).toHaveLength(1);
+
+    const again = await req("/owner/faucet", { token, body: {} });
+    expect(again.status).toBe(429);
+    const body = (await again.json()) as { error: string; nextAt: string };
+    expect(body.error).toMatch(/already claimed/);
+    expect(Date.parse(body.nextAt)).toBeGreaterThan(Date.now());
+    expect(sent).toHaveLength(1);
+    const after = (await (await req("/owner/overview?cluster=devnet", { token })).json()) as {
+      faucet: { nextAt: string | null };
+    };
+    expect(after.faucet.nextAt).toBe(body.nextAt);
+
+    // Another wallet has its own claim.
+    const bobs = await req("/owner/faucet", { token: await session(bob), body: {} });
+    expect(bobs.status).toBe(200);
+    expect(sent).toHaveLength(2);
+  });
+
+  it("does not use up the day's claim when the mint fails", async () => {
+    ctx.treasury = await generateKeyPairSigner();
+    ctx.rpc = () => landing(true).rpc as never;
+    const token = await session(alice);
+    const failed = await req("/owner/faucet", { token, body: {} });
+    expect(failed.status).toBe(502);
+    // The reason is logged, not shown: it could name the RPC endpoint.
+    expect(((await failed.json()) as { error: string }).error).not.toMatch(/node is behind/);
+
+    ctx.rpc = () => landing().rpc as never;
+    expect((await req("/owner/faucet", { token, body: {} })).status).toBe(200);
+  });
+});
+
 describe("Connect Telegram", () => {
   const linkFor = async (owner: string) => ({
     url: `https://t.me/syndromi_bot?start=code-for-${owner.slice(0, 4)}`,
@@ -411,7 +497,8 @@ describe("server-held agents and their tokens", () => {
       manifest: { ...t.manifest, name: "bobs-1" },
     });
     expect(bobs.status).toBe(200);
-  });
+    // Six keys are encrypted with scrypt here, which sits right at the default 5 s limit.
+  }, 20_000);
 
   it("creates, lists and revokes tokens for the owner's agent only", async () => {
     const token = await signedIn();
@@ -478,7 +565,7 @@ describe("server-held agents and their tokens", () => {
       address: (await generateKeyPairSigner()).address,
       owner: alice.address,
       cluster: "devnet",
-      allowanceMint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" as Address,
+      allowanceMint: "8wvXYteqfNieCn4RVC8rnDSGgugHkMbPT4x8KnMeneVd" as Address,
       runtime: "external",
       rules: { maxTxUsd: 10, approveAboveUsd: 5, destinations: ["self"], programs: ["jupiter"] },
       registeredAt: new Date().toISOString(),

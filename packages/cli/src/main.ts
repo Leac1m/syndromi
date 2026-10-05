@@ -26,10 +26,10 @@ const HELP = `syndromi <command>
                                           or any MCP client) and create the agent's encrypted key;
                                           with a server, register it for funding in the dashboard
   faucet [--server <url>]                 owner: get devnet test USDC from the server's faucet
-  fund <dir>                              owner: send the fee budget and grant the allowance
+  fund <dir>                              owner: send SOL for network fees and grant the allowance
   run <dir> [--once] [--server <url>] [--max-steps n] [--model [nvidia|gemini|anthropic:]id]
                                           run now (--once) or on the schedule; with a server,
-                                          drafts go to Telegram and approvals are executed
+                                          approval requests go to Telegram, and approved ones execute
   mcp <dir> [--server <url>]              serve the agent's tools over MCP (stdio) so any MCP client
                                           (Claude, Cursor) can act as the agent, under the same policy
   watch <dir> [--once] [--server <url>]   execute owner approvals only (no LLM)
@@ -40,8 +40,8 @@ const HELP = `syndromi <command>
   action <path> [--server <url>]          owner: run a server Action with the CLI key, e.g.
                                           /actions/fund-agent/<name>, "/actions/kill-switch?cluster=devnet"
   request-topup <dir> --amount n --reason "…" [--server <url>]
-  status                                  list the bag's delegations and what is left
-  revoke --all | --agent <name> [--hard]  kill switch: revoke delegations
+  status                                  list the allowances your wallet granted and what is left
+  revoke --all | --agent <name> [--hard]  kill switch: revoke allowances and top-ups
 
 Cluster: devnet by default; --fork for a local Surfpool mainnet fork; --mainnet (asks to confirm).
 Env: SYNDROMI_PASSPHRASE, OWNER_KEYPAIR, SYNDROMI_HOME, RPC_API_KEY, SYNDROMI_SERVER_URL,

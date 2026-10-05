@@ -2,7 +2,13 @@
 // proposals; the policy signer decides allow | needs_approval | block; only `allow` is signed and
 // sent here. Every step is written to the activity log.
 import type { Signature, Transaction } from "@solana/kit";
-import { errorDetail, explorerTx, type Manifest, type PolicySigner } from "@syndromi/core";
+import {
+  describePeriod,
+  errorDetail,
+  explorerTx,
+  type Manifest,
+  type PolicySigner,
+} from "@syndromi/core";
 import type { ToolContext, ToolOutcome, Toolset } from "@syndromi/tools";
 import type { ActivityLog } from "./activity.js";
 import type { ApprovalGateway } from "./approvals.js";
@@ -249,7 +255,7 @@ export function systemPrompt(opts: Pick<RunOptions, "manifest" | "prompt" | "ctx
 
 Facts:
 - Your wallet: ${ctx.agent} (${ctx.cluster}).
-- Allowance: ${m.allowance.amount} ${m.allowance.mint} per ${m.allowance.period.replace(/ly$/, "")}, pulled from the owner's bag with the pull-allowance tool. It is capped onchain.
+- Allowance: ${m.allowance.amount} ${m.allowance.mint} per ${describePeriod(m.allowance.period)}, pulled from the owner's wallet with the pull-allowance tool. It is capped onchain.
 - Owner rules, enforced by a policy signer you cannot bypass: programs [${p.programs.join(", ")}]; funds may only go to ${destinations}; at most $${p.max_tx_usd} per transaction; anything above $${p.approve_above_usd} waits for the owner's approval.
 
 How acting works:

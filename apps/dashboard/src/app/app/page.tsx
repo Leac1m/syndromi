@@ -9,6 +9,7 @@ import { RunNow } from "@/components/run-now";
 import { TelegramCard } from "@/components/telegram-card";
 import { Card } from "@/components/ui";
 import { api, type Overview as OverviewData, ServerUnreachable } from "@/lib/api";
+import { periodWord, whereItRuns } from "@/lib/format";
 import { usePoll } from "@/lib/use-poll";
 
 const UNREACHABLE = new ServerUnreachable().message;
@@ -38,7 +39,7 @@ export default function Overview() {
         </div>
       )}
 
-      <Card title="Bag">
+      <Card title="Your wallet">
         <p className="text-3xl font-bold tabular-nums">
           {data ? data.bag.usdc.toLocaleString() : "…"}{" "}
           <span className="text-base font-medium text-muted">{symbol}</span>
@@ -90,7 +91,7 @@ export default function Overview() {
                       guided tour
                     </span>
                   )}
-                  <span className="rounded bg-line px-1.5 py-0.5 text-xs">{a.runtime}</span>
+                  <span className="rounded bg-line px-1.5 py-0.5 text-xs">{whereItRuns(a)}</span>
                   {a.pending > 0 && (
                     <span className="rounded bg-warn px-1.5 py-0.5 text-xs text-white">
                       {a.pending} pending
@@ -99,7 +100,7 @@ export default function Overview() {
                 </Link>
                 <p className="text-sm text-muted">
                   {a.funded && a.allowanceLeft
-                    ? `${a.allowanceLeft.remaining} of ${a.allowanceLeft.limit} ${a.allowance?.mint ?? ""} left this ${a.allowance?.period.replace(/ly$/, "")}`
+                    ? `${a.allowanceLeft.remaining} of ${a.allowanceLeft.limit} ${a.allowance?.mint ?? ""} left this ${periodWord(a.allowance?.period)}`
                     : "Needs funding"}
                 </p>
                 {a.runtime === "hosted" && a.funded && !a.paused && (

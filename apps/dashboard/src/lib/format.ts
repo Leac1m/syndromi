@@ -24,6 +24,27 @@ const TOOL_PROGRESS: Record<string, string> = {
   "yield-data": "reading yield data",
 };
 
+/** What each kind of owner decision is called in the feed. */
+const APPROVAL_KINDS: Record<string, string> = {
+  kill: "kill switch",
+  fund: "funding",
+  draft: "approval request",
+  topup: "top-up",
+  token: "access",
+};
+
+/** Where an agent runs, as the owner would say it. */
+export function whereItRuns(agent: { runtime: string; custody?: string }): string {
+  if (agent.runtime === "hosted") return "hosted";
+  if (agent.runtime === "external")
+    return agent.custody === "server" ? "your AI" : "your AI, your key";
+  return "on your machine";
+}
+
+/** "week" for a weekly allowance, and so on. */
+export const periodWord = (period: string | undefined) =>
+  ({ daily: "day", weekly: "week", monthly: "month" })[period ?? ""] ?? "period";
+
 const STOP_REASONS: Record<string, string> = {
   max_steps: "step limit reached",
   refused: "the model declined",
@@ -67,7 +88,7 @@ export function feedLine(e: ActivityEvent): FeedLine | undefined {
     case "draft_created":
       return {
         ...base,
-        text: `drafted for approval: ${String(e.summary)}${money(e.usd)}`,
+        text: `waiting for your approval: ${String(e.summary)}${money(e.usd)}`,
         tone: "warn",
       };
     case "blocked": {
@@ -96,8 +117,7 @@ export function feedLine(e: ActivityEvent): FeedLine | undefined {
         : ["failed", "stale", "revoked"].includes(status)
           ? "bad"
           : "neutral";
-      const what =
-        e.kind === "kill" ? "kill switch" : e.kind === "fund" ? "funding" : String(e.kind);
+      const what = APPROVAL_KINDS[String(e.kind)] ?? String(e.kind);
       return {
         ...base,
         text: `${what} ${status}: ${String(e.summary)}`,

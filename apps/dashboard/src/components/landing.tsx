@@ -247,14 +247,17 @@ function Problem() {
 
 function How() {
   const steps = [
-    ["Fund one bag", "Your USDC stays in your own wallet. Nothing is deposited into a contract."],
+    [
+      "Fund one wallet",
+      "Your USDC stays in your own wallet. Nothing is deposited into a contract.",
+    ],
     [
       "Give each agent an allowance",
       "Pick an amount per day, week or month, the programs it may use, where funds may go, a per-transaction cap and an approval threshold.",
     ],
     [
       "Agents work. You stay in control.",
-      "Routine actions run. Larger ones reach you in Telegram or the dashboard as a Blink to sign. Anything outside the rules is blocked before it is signed.",
+      "Routine actions run. Larger ones reach you in Telegram or the dashboard as a request to sign. Anything outside the rules is blocked before it is signed.",
     ],
   ];
   return (
@@ -279,7 +282,7 @@ function How() {
         </p>
         <ul className="grid gap-2 text-muted">
           {[
-            "mcp-agent may take up to 5 USDC per week from your bag. The limit is enforced onchain.",
+            "mcp-agent may take up to 5 USDC per week from your wallet. The limit is enforced onchain.",
             "It may only use Jupiter swaps, swaps on the devnet test pool (Orca) and pulling its allowance, and funds may only go to its own wallet.",
             "No single transaction may move more than $10; anything above $5 waits for your signature.",
             "You send it 0.02 SOL once for network fees.",
@@ -308,7 +311,7 @@ function Features() {
     ],
     [
       "Approve from your phone",
-      "Held actions become Blinks. You sign a message that names exactly what you approve, and the runtime checks it again before executing.",
+      "Held actions become approval links. You sign a message that names exactly what you approve, and the runtime checks it again before executing.",
     ],
     [
       "One-signature kill switch",
@@ -505,7 +508,7 @@ function Beta() {
               }
               <C># an agent and its encrypted key</C>
               {"\npnpm syndromi fund templates/mcp-agent   "}
-              <C># fee budget + a 5 USDC/week allowance</C>
+              <C># SOL for fees + a 5 USDC/week allowance</C>
               {"\npnpm syndromi status                     "}
               <C># what each agent may still pull</C>
               {"\npnpm syndromi revoke --all               "}
@@ -525,7 +528,7 @@ function Faq() {
   const items = [
     [
       "Do I deposit funds into a contract?",
-      "No. The bag is your own USDC token account. The allowance is a delegation that you can revoke at any time.",
+      "No. The funds stay in your own wallet. The allowance is a permission you can revoke at any time.",
     ],
     [
       "What if an agent is compromised?",

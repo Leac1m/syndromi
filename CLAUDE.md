@@ -103,6 +103,22 @@ tools: [pyth-price, jupiter-quote, jupiter-swap, balances, pull-allowance, reque
 prompt: ./prompt.md
 ```
 
+## Words users see (Beta phase 8)
+
+Code, API fields, manifest keys and these internal docs keep their names (`bag`, `draft`, `delegation`, `fee_budget`). Anything an owner or their AI reads uses the words on the right: the dashboard, landing page, Telegram, approval pages, Action cards, rule cards, tool descriptions, the agent's system prompt, CLI output and the README.
+
+| In code | Users see |
+|---|---|
+| bag | your wallet |
+| agent wallet | the agent's wallet |
+| draft | approval request |
+| Blink | approval link |
+| delegation (recurring / fixed) | allowance / top-up |
+| fee budget | SOL for network fees |
+| runtime external / hosted / local | your AI / hosted / on your machine |
+
+Kill switch, top-up, allowance and BLOCKED are already the user's words. One exception: the text an owner signs to approve a request (`approvalMessage` in `packages/core/src/approval.ts`) still says "draft". It is parsed line by line and verified by the server and by runtimes that may be on an older version, so reword it only together with a format version.
+
 ## Rules for Claude Code in this repo
 
 1. **Check the docs before writing integration code.** These SDKs changed during 2026. Use the Solana MCP server and the doc links below; do not rely on memory for package APIs, program IDs, or instruction layouts.

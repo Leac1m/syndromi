@@ -46,7 +46,8 @@ export async function signTransactionBytes(owner: string, transaction: Uint8Arra
     const { accounts } = await (wallet.features["standard:connect"] as Connect).connect();
     account = accounts.find((a) => a.address === owner);
   }
-  if (!account) throw new Error(`Switch ${wallet.name} to the bag owner ${owner}.`);
+  if (!account)
+    throw new Error(`Switch ${wallet.name} to the account you signed in with (${owner}).`);
   const [out] = await (
     wallet.features["solana:signTransaction"] as SignTransaction
   ).signTransaction({

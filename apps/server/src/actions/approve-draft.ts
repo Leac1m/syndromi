@@ -20,7 +20,7 @@ export function mountApproveDraft(app: Hono, ctx: ServerContext, icon: string) {
 
   const load = async (c: Context) => {
     const draft = await store.draft(c.req.param("id") ?? "");
-    if (!draft) return { error: actionError(c, "No such draft", 404) };
+    if (!draft) return { error: actionError(c, "No such approval request", 404) };
     if (draft.status === "pending" && Date.parse(draft.expiresAt) < Date.now()) {
       const expired = await store
         .updateDraft(draft.id, { status: "expired" }, ["pending"])
@@ -46,7 +46,7 @@ export function mountApproveDraft(app: Hono, ctx: ServerContext, icon: string) {
       title: `${draft.agentName} wants approval`,
       description:
         `${draft.summary}. Value $${draft.usd.toFixed(2)}${threshold}.\n` +
-        `Signing approves only this draft; the agent re-quotes and executes if the value ` +
+        `Signing approves only this request; the agent re-quotes and executes if the value ` +
         `stays within 10%. Expires ${draft.expiresAt}.`,
       label: draft.status === "pending" ? "Approve" : statusLabel(draft),
       disabled: draft.status !== "pending",
@@ -60,10 +60,14 @@ export function mountApproveDraft(app: Hono, ctx: ServerContext, icon: string) {
   app.post(path(":id"), async (c) => {
     const { draft, error } = await load(c);
     if (!draft) return error;
-    if (draft.status !== "pending") return actionError(c, `This draft is ${draft.status}.`, 409);
+    if (draft.status !== "pending") return actionError(c, `This request is ${draft.status}.`, 409);
     const { account } = (await c.req.json().catch(() => ({}))) as { account?: string };
     if (account !== draft.owner) {
-      return actionError(c, `Only the bag owner (${draft.owner}) can approve this draft.`, 403);
+      return actionError(
+        c,
+        `Only the owner's wallet (${draft.owner}) can approve this request.`,
+        403,
+      );
     }
     const nonce = crypto.randomUUID();
     const text = await approvalMessage({
@@ -88,7 +92,7 @@ export function mountApproveDraft(app: Hono, ctx: ServerContext, icon: string) {
   app.post(`${path(":id")}/verify`, async (c) => {
     const { draft, error } = await load(c);
     if (!draft) return error;
-    if (draft.status !== "pending") return actionError(c, `This draft is ${draft.status}.`, 409);
+    if (draft.status !== "pending") return actionError(c, `This request is ${draft.status}.`, 409);
     const body = (await c.req.json().catch(() => ({}))) as Partial<MessageNextActionPostRequest>;
     const text = body.state ? await store.consumeSignRequest(body.state, draft.id) : undefined;
     if (!text) return actionError(c, "Unknown or already used approval request.", 400);
@@ -96,7 +100,7 @@ export function mountApproveDraft(app: Hono, ctx: ServerContext, icon: string) {
       return actionError(c, "Signed data does not match the approval request.", 400);
     }
     if (body.account !== draft.owner || !body.signature) {
-      return actionError(c, "Only the bag owner can approve this draft.", 403);
+      return actionError(c, "Only the owner's wallet can approve this request.", 403);
     }
     const check = await verifyOwnerApproval({
       text,
@@ -113,7 +117,7 @@ export function mountApproveDraft(app: Hono, ctx: ServerContext, icon: string) {
         ["pending"], // it may have expired or been rejected while the owner was signing
       );
     } catch (e) {
-      if (e instanceof StatusChanged) return actionError(c, `This draft is ${e.status}.`, 409);
+      if (e instanceof StatusChanged) return actionError(c, `This request is ${e.status}.`, 409);
       throw e;
     }
     ctx.bus.emit("draft", approved);

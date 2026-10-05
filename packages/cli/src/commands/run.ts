@@ -53,7 +53,9 @@ export async function run(
     await server.register(session.registration);
     sinks.push(httpSink(server, manifest.name));
     approvals = new HttpApprovalGateway(server, manifest.name);
-    io.print(`server  ${opts.server ?? env.SYNDROMI_SERVER_URL} (drafts go to Telegram)`);
+    io.print(
+      `server  ${opts.server ?? env.SYNDROMI_SERVER_URL} (approval requests go to Telegram)`,
+    );
   }
   const send = (tx: Parameters<typeof sendAndConfirm>[1]) => sendAndConfirm(agent.rpc, tx);
   const provider = createProvider(manifest, env);

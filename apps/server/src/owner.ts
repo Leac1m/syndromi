@@ -235,7 +235,7 @@ export function mountOwner(app: Hono, ctx: ServerContext) {
       ).length;
     } catch (e) {
       return c.json(
-        { error: `could not check ${agent.name}'s delegations: ${(e as Error).message}` },
+        { error: `could not check ${agent.name}'s allowances: ${(e as Error).message}` },
         502,
       );
     }

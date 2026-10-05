@@ -72,10 +72,10 @@ export async function fund(dir: string, opts: { cluster: Cluster }, io: Io, env:
     }
   }
   const held = await bagBalance();
-  io.print(`bag     ${toUiAmount(held, decimals)} ${token?.symbol ?? mint}`);
+  io.print(`wallet  ${toUiAmount(held, decimals)} ${token?.symbol ?? mint}`);
   if (held < amountPerPeriod) {
     io.print(
-      `warning the bag holds less than one period's allowance; pulls will fail until it is funded`,
+      `warning your wallet holds less than one period's allowance; pulls will fail until it has more`,
     );
   }
 

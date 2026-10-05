@@ -320,6 +320,23 @@ A new owner sees the rules work before connecting anything: no AI, no key, no in
 - **Not checked live:** the bot's handlers are tested against a recorded Telegram API, not the
   real bot, because only one server may hold a bot's updates and the hosted one does.
 
+### Wording (Beta phase 8, Oct 5)
+
+User-facing text now says "your wallet" (not bag), "approval request" (not draft), "approval link"
+(not Blink), "allowance" and "top-up" (not delegation), "SOL for network fees" (not fee budget), and
+"your AI / hosted / on your machine" where badges showed the manifest's `external / hosted / local`.
+The table is in `CLAUDE.md` ("Words users see"). Code identifiers, API fields (`data.bag`), manifest
+keys and Action paths (`/actions/approve-draft/…`) are unchanged.
+
+- **Covered:** the dashboard and landing page, Telegram messages, the approval page, Action cards
+  and errors, the rule card, tool descriptions and the agent's system prompt, CLI output and help,
+  and the README's user sections.
+- **Deliberately not changed:** the message an owner signs to approve a request still reads
+  "Approve draft …". The server and the runtime parse and verify that text, and a tester's local
+  runtime may be older than the server, so changing it needs a format version, not a reword.
+- **Fixed on the way:** a daily allowance read "left this dai" in the dashboard and "per dai" in the
+  agent's system prompt (a `weekly → week` shortcut applied to every period).
+
 ### Choosing the domain
 
 | Option | Stable? | Cost | Fit |

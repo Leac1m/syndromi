@@ -459,8 +459,8 @@ export async function createTelegram(
         await notify(
           owner,
           e.left
-            ? `🛑 Kill switch: some delegations revoked on ${esc(String(e.cluster))}; ${e.left} left.`
-            : `🛑 Kill switch: every delegation on ${esc(String(e.cluster))} is revoked. No agent can pull from your bag.`,
+            ? `🛑 Kill switch: some allowances revoked on ${esc(String(e.cluster))}; ${e.left} left.`
+            : `🛑 Kill switch: every allowance and top-up on ${esc(String(e.cluster))} is revoked. No agent can pull from your wallet.`,
         );
         return;
       }

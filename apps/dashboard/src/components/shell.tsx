@@ -84,9 +84,9 @@ function Welcome() {
     <section className="mt-16 text-center">
       <h1 className="text-3xl font-bold">Budgets for your AI agents</h1>
       <p className="mx-auto mt-3 max-w-xl text-muted">
-        Give each agent an allowance your bag enforces onchain, rules it cannot break, and approvals
-        you sign. Connect the Phantom account that owns your bag, then sign in (a free message, no
-        transaction).
+        Give each agent an allowance that is enforced onchain, rules it cannot break, and approvals
+        you sign. Connect the Phantom account that holds your funds, then sign in (a free message,
+        no transaction).
       </p>
     </section>
   );

@@ -171,7 +171,7 @@ export function mountOwnerTx(app: Hono, ctx: ServerContext, icon: string) {
       transaction?: string;
     };
     if (body.account !== tx.owner || !body.transaction) {
-      return actionError(c, "Only the bag owner can sign this.", 403, tx.cluster);
+      return actionError(c, "Only the owner's wallet can sign this.", 403, tx.cluster);
     }
     let signed: ReturnType<ReturnType<typeof getTransactionDecoder>["decode"]>;
     let submitted: string;

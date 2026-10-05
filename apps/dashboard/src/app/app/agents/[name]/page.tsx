@@ -10,6 +10,7 @@ import { RunNow } from "@/components/run-now";
 import { Card, RuleCard } from "@/components/ui";
 import { api } from "@/lib/api";
 import { short } from "@/lib/config";
+import { whereItRuns } from "@/lib/format";
 import { usePoll } from "@/lib/use-poll";
 
 export default function AgentPage({ params }: { params: Promise<{ name: string }> }) {
@@ -35,7 +36,7 @@ export default function AgentPage({ params }: { params: Promise<{ name: string }
         title={name}
         action={
           <span className="text-sm text-muted">
-            {agent ? `${agent.runtime} · ${short(agent.address)}` : ""}
+            {agent ? `${whereItRuns(agent)} · ${short(agent.address)}` : ""}
           </span>
         }
       >

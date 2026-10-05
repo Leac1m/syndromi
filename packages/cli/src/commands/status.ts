@@ -31,7 +31,9 @@ export async function status(opts: { cluster: Cluster }, io: Io, env: Env) {
   const client = ownerClient(owner, opts.cluster, env);
   const names = await agentNames(env);
   const delegations = await listDelegations(client.rpc, owner.address);
-  io.print(`bag owner ${owner.address} (${opts.cluster}): ${delegations.length} delegation(s)`);
+  io.print(
+    `owner ${owner.address} (${opts.cluster}): ${delegations.length} allowance(s) and top-up(s)`,
+  );
   for (const d of delegations) {
     const token = tokenByMint(d.mint);
     const ui = (n: bigint) => toUiAmount(n, token?.decimals ?? 6);

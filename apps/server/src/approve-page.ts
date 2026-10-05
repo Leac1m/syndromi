@@ -121,7 +121,7 @@ async function connect() {
   const { accounts } = await wallet.features["standard:connect"].connect();
   const account = (OWNER && accounts.find((acc) => acc.address === OWNER)) || accounts[0];
   if (!account) throw new Error("The wallet shared no account.");
-  if (OWNER && account.address !== OWNER) throw new Error("Switch " + wallet.name + " to the bag owner " + OWNER + " (connected: " + account.address + ").");
+  if (OWNER && account.address !== OWNER) throw new Error("Switch " + wallet.name + " to the owner's account " + OWNER + " (connected: " + account.address + ").");
   connected = { wallet, account };
   return connected;
 }

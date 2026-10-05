@@ -5,13 +5,13 @@
 The Solana Foundation gave Solana allowances. syndromí turns them into safe, governable budgets
 for fleets of AI agents.
 
-One owner wallet (the **bag**) funds many agents:
+One owner wallet funds many agents:
 - Each agent gets an **allowance** (an amount per period) that the Subscriptions & Allowances
   program enforces onchain.
 - Every transaction an agent wants to sign passes a **policy layer**: allowed programs, allowed
   destinations, a per-transaction cap and an approval threshold.
-- Anything above the threshold becomes a **draft**. The owner approves it by signing a Blink,
-  from Telegram (phone) or the dashboard.
+- Anything above the threshold becomes an **approval request**. The owner approves it by signing
+  an approval link, from Telegram (phone) or the dashboard.
 - One **kill switch** revokes every allowance.
 
 MIT licensed.
@@ -43,7 +43,7 @@ There is no model to configure: the client is the brain.
 ```bash
 pnpm install
 pnpm syndromi init                       # creates mcp-agent and its encrypted key
-pnpm syndromi fund templates/mcp-agent   # owner: fee budget + a 5 USDC/week allowance
+pnpm syndromi fund templates/mcp-agent   # owner: SOL for fees + a 5 USDC/week allowance
 # init printed a `claude mcp add …` line; run it, restart Claude Code, and ask it to check balances
 ```
 
@@ -60,7 +60,7 @@ pnpm install
 cp .env.example .env                     # add NVIDIA_API_KEY (RPC_API_KEY optional)
 
 pnpm syndromi init templates/dca-agent   # the agent's own encrypted key, under ~/.syndromi
-pnpm syndromi fund templates/dca-agent   # owner: fee budget + a 20 USDC/week allowance
+pnpm syndromi fund templates/dca-agent   # owner: SOL for fees + a 20 USDC/week allowance
 pnpm syndromi run templates/dca-agent --once
 pnpm syndromi status                     # what each agent may still pull
 pnpm syndromi revoke --all               # the kill switch
@@ -85,9 +85,9 @@ The full six-step demo is in [`docs/demo-runbook.md`](docs/demo-runbook.md).
 ## How it works
 
 ```
-             owner (Phantom): funds the bag, grants and revokes allowances, signs approvals
+             owner (Phantom): holds the funds, grants and revokes allowances, signs approvals
                                          │
-      bag = owner's USDC account ── Subscriptions Delegation Program
+  owner's wallet (USDC account) ─── Subscriptions Delegation Program
                                          │  recurring delegation = allowance
                                          │  fixed delegation     = approved top-up
                                          ▼  revoke               = kill switch
@@ -96,7 +96,7 @@ The full six-step demo is in [`docs/demo-runbook.md`](docs/demo-runbook.md).
        │  model → tools → UNSIGNED transaction + intent
        ▼
   policy signer ── allow ─────────► sign & send
-       ├── needs_approval ──► draft → Telegram / dashboard Blink → owner signs → execute
+       ├── needs_approval ──► approval request → Telegram / dashboard → owner signs → execute
        └── block ───────────► never signed; BLOCKED in the feed and on Telegram
 ```
 
@@ -143,8 +143,8 @@ api_key_env: NVIDIA_API_KEY          # export NVIDIA_API_KEY=… in your shell o
 
 Or switch for one run: `pnpm syndromi run <dir> --model gemini:<id>` (`GEMINI_API_KEY`) or
 `--model anthropic:<id>` (`ANTHROPIC_API_KEY`). Any server that speaks the OpenAI chat-completions
-API works as `openai-compatible:<base url>`. With `--server`, drafts still go to Telegram and the
-dashboard and the rules are the same.
+API works as `openai-compatible:<base url>`. With `--server`, approval requests still go to Telegram and
+the dashboard and the rules are the same.
 
 ### No install: remote MCP and the HTTP API
 
@@ -165,7 +165,7 @@ kill switch, cuts access at once.
 
 ## Security model
 
-- **The budget is enforced onchain.** An agent can only pull what its delegation allows this
+- **The budget is enforced onchain.** An agent can only pull what its allowance permits this
   period. Even a fully compromised agent key cannot take more than the allowance.
 - **Nothing signs without the policy.** Tools return unsigned transactions and a tool-written
   intent. The policy signer then checks the transaction:
@@ -175,9 +175,9 @@ kill switch, cuts access at once.
   - it strips any signer a tool embedded in the message.
 
   Model output never reaches a signer.
-- **Approvals are verified twice.** The owner signs a message that names the draft's hash
+- **Approvals are verified twice.** The owner signs a message that names the request's hash
   and a USD bound. The server and the runtime both verify that signature before executing. If the rebuilt transaction
-  comes out more than 10% above the approved USD value, the draft goes stale instead.
+  comes out more than 10% above the approved USD value, the request goes stale instead.
 - **Keys:** local agent keys are encrypted files. Hosted keys are encrypted with a server secret
   and never leave the server. Removing an agent archives its key instead of deleting it.
 - **Prompt injection:** the demo agent `pool-scout` reads a poisoned pool description telling it
@@ -189,7 +189,7 @@ kill switch, cuts access at once.
 ## The web app
 
 `apps/dashboard` serves the product: a landing page at `/` (server-rendered, no wallet code) and the
-app under `/app` (connect Phantom, bag, agents, approvals, kill switch). Both are light-themed.
+app under `/app` (connect Phantom, your wallet, agents, approvals, kill switch). Both are light-themed.
 
 ## Status and roadmap
 

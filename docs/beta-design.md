@@ -220,6 +220,13 @@ A free trial of the topology above, before the VPS:
 - **Still limited:** the free instance sleeps after 15 minutes without requests (about a minute to
   wake), and while asleep the Telegram bot, the approval watcher and the expiry sweeper pause. A
   paid instance or the VPS removes that; the data no longer depends on it.
+- **Decided Oct 5: a paid Render instance, not the VPS.** A sleeping server is worst for the path
+  the beta is about: a tester's AI calling `/agent/mcp` hangs for the minute it takes to wake, and
+  the client gives up. The VPS packaging below (Docker, Caddy, DuckDNS) is not being built. Set the
+  service's health check path to `/healthz` (the process is up and the store answers; it returns
+  `{ ok, hosted, telegram }`). The dashboard pings it: until the first answer it shows "Connecting
+  to the server…", which now only happens while a deploy restarts the server, and afterwards a lost
+  connection shows a notice without clearing the page.
 
 ### Choosing the domain
 

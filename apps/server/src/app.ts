@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { mountApproveDraft } from "./actions/approve-draft.js";
 import { mountApproveTopUp } from "./actions/approve-topup.js";
 import { mountFundAgent } from "./actions/fund-agent.js";
@@ -31,6 +32,17 @@ export function createApp(ctx: ServerContext) {
     ctx.telegram?.webhook ? await ctx.telegram.webhook(c) : c.text("not found", 404),
   );
   app.get("/", (c) => c.text("syndromi server"));
+  // Liveness for the host's health check and the dashboard's "connecting" state: the process is
+  // up and the store answers. It says nothing an outsider should not know, so any origin may read it.
+  app.get("/healthz", cors({ origin: "*", allowMethods: ["GET"] }), async (c) => {
+    try {
+      await ctx.store.setting("healthz");
+    } catch (e) {
+      console.error("healthz:", (e as Error).message);
+      return c.json({ ok: false }, 503);
+    }
+    return c.json({ ok: true, hosted: Boolean(ctx.hosted), telegram: Boolean(ctx.telegram) });
+  });
   return app;
 }
 

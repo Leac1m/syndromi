@@ -95,16 +95,50 @@ export function clearSession() {
   } catch {}
 }
 
+/** The server did not answer at all (restarting, or the network is down): not an HTTP error. */
+export class ServerUnreachable extends Error {
+  constructor() {
+    super("The server is not answering. It may be restarting; this page keeps trying.");
+    this.name = "ServerUnreachable";
+  }
+}
+
+const CALL_TIMEOUT_MS = 30_000;
+const PING_TIMEOUT_MS = 5_000;
+
+/** fetch that turns "no answer" (network error or timeout) into ServerUnreachable. */
+async function reach(path: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  try {
+    return await fetch(`${SERVER}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch {
+    throw new ServerUnreachable();
+  }
+}
+
+/** Whether the server is up and its store answers (GET /healthz). Never throws. */
+export async function pingServer(): Promise<boolean> {
+  try {
+    const res = await reach("/healthz", {}, PING_TIMEOUT_MS);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function call<T>(path: string, body?: unknown, method?: "DELETE"): Promise<T> {
   const token = currentSession()?.token;
-  const res = await fetch(`${SERVER}${path}`, {
-    method: method ?? (body === undefined ? "GET" : "POST"),
-    headers: {
-      "content-type": "application/json",
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
+  const res = await reach(
+    path,
+    {
+      method: method ?? (body === undefined ? "GET" : "POST"),
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
+    CALL_TIMEOUT_MS,
+  );
   const json = (await res.json().catch(() => ({}))) as T & { error?: unknown };
   if (res.status === 401 && path !== "/owner/session") clearSession();
   if (!res.ok) {

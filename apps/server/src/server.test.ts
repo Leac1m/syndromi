@@ -91,6 +91,24 @@ beforeEach(async () => {
   });
 });
 
+describe("healthz", () => {
+  it("answers when the store does, for any origin", async () => {
+    const res = await app.request("/healthz", { headers: { origin: "https://elsewhere.example" } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(await res.json()).toEqual({ ok: true, hosted: false, telegram: false });
+  });
+
+  it("is 503 when the store does not answer", async () => {
+    ctx.store.setting = async () => {
+      throw new Error("database is down");
+    };
+    const res = await app.request("/healthz");
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ ok: false });
+  });
+});
+
 describe("Actions spec plumbing", () => {
   it("serves actions.json, CORS preflight, and the version/chain headers", async () => {
     const manifest = await action("/actions.json");

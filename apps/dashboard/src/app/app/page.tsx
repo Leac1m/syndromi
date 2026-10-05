@@ -6,8 +6,10 @@ import { useApp } from "@/components/providers";
 import { RunNow } from "@/components/run-now";
 import { TelegramCard } from "@/components/telegram-card";
 import { Card } from "@/components/ui";
-import { api } from "@/lib/api";
+import { api, ServerUnreachable } from "@/lib/api";
 import { usePoll } from "@/lib/use-poll";
+
+const UNREACHABLE = new ServerUnreachable().message;
 
 export default function Overview() {
   const app = useApp();
@@ -15,6 +17,8 @@ export default function Overview() {
     app.network,
     app.owner,
   ]);
+  // The shell already says so when the server stops answering; only other errors are shown here.
+  const unreachable = error === UNREACHABLE;
 
   const allocated = Object.entries(data?.allocatedPerPeriod ?? {})
     .map(([period, amount]) => `${amount} USDC ${period}`)
@@ -23,7 +27,7 @@ export default function Overview() {
 
   return (
     <div className="grid gap-4 md:grid-cols-3">
-      {error && <p className="text-sm text-bad md:col-span-3">Server: {error}</p>}
+      {error && !unreachable && <p className="text-sm text-bad md:col-span-3">Server: {error}</p>}
 
       <Card title="Bag">
         <p className="text-3xl font-bold tabular-nums">
